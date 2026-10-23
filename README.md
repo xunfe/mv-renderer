@@ -7,6 +7,8 @@
 
 **版本：1.0.0** · **许可：[AGPL-3.0](LICENSE)** · 安卓包名 `com.dsha.xmmv`
 
+仓库：<https://github.com/xunfe/mv-renderer> · 下载：[Releases](https://github.com/xunfe/mv-renderer/releases)
+
 ---
 
 ## 这是什么
