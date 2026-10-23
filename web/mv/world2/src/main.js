@@ -15,6 +15,7 @@ const bufCv = new OffscreenCanvas(W * SS, H * SS);
 const buf = bufCv.getContext('2d');
 canvas.width = W * SS; canvas.height = H * SS;
 window.FPS = Number(Q.get('fps') || 60);
+const DYN_ON = (() => { try { const v = localStorage.getItem('mv-dynres'); return v === null ? true : v === '1'; } catch (e) { return true; } })();
 
 const SKY0 = '#050c14', SKY1 = '#0b2230', INK = '#07131c', INK2 = '#0d1f2b';
 const PAPER = '#f2e7d3', PAPER2 = '#e5d5b9', GOLD = '#e8b86a', CYAN = '#7fd7e8', CORAL = '#ff7a4d';
@@ -766,7 +767,7 @@ function preview() {
         fFrames++;
       }
     }
-    if (!checked && performance.now() - fT0 > 2600) {
+    if (DYN_ON && !checked && performance.now() - fT0 > 2600) {
       checked = true;
       const fps = fFrames * 1000 / (performance.now() - fT0);
       if (SS > 1.01 && fps < window.FPS * 0.72) {
