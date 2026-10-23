@@ -1,0 +1,1 @@
+var e=class{ctx;stateful=!1;prerollMax=6;handlesTransition=!1;constructor(e){this.ctx=e}init(){}reset(){}dispose(){}};export{e as t};

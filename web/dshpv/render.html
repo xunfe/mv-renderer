@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>DSH PV · 离线渲染</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: dark; --acc:#ff4d12; --ok:#3ad07a; --warn:#e8b23c; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #060607; color: #e9e5dd;
+    font: 14px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    padding: 64px 24px 48px; max-width: 860px;
+  }
+  h1 { font-size: 20px; margin: 0 0 6px; letter-spacing: .4px; }
+  .tag { display:inline-block; font-size:10px; color:var(--acc); border:1px solid var(--acc); border-radius:999px; padding:1px 8px; margin-left:8px; vertical-align:2px; }
+  .sub { color: #8f8a82; font-size: 12px; margin-bottom: 16px; }
+  .note { color:#a29c93; font-size:12.5px; line-height:1.9; border:1px solid #26262a; border-radius:12px; padding:14px 16px; background:#0d0d10; margin-bottom:18px; }
+  .note b { color:#fff; font-weight:600; }
+  .note a { color:#c9c4bb; }
+  .card { border:1px solid #26262a; border-radius:12px; padding:18px; background:linear-gradient(180deg,#121214,#0b0b0d); margin-bottom:16px; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+  .phase { color:#e9e5dd; font-size:14px; }
+  .pct { color:var(--acc); font-size:22px; font-weight:700; }
+  .bar { height:10px; border-radius:6px; background:#1a1a1f; overflow:hidden; }
+  .bar > i { display:block; height:100%; width:0%; background:linear-gradient(90deg,#ff4d12,#ff9a5c); transition:width .4s; }
+  .meta { display:flex; gap:18px; color:#7d7871; font-size:12px; margin-top:10px; flex-wrap:wrap; }
+  .btns { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+  button { font: inherit; cursor:pointer; border-radius:10px; padding:11px 18px; border:1px solid #3a3a40; background:#0d0d10; color:#e9e5dd; }
+  button:hover { border-color:var(--acc); }
+  button.primary { border-color:var(--acc); color:#fff; background:var(--acc); font-weight:600; }
+  button.primary:hover { filter:brightness(1.1); }
+  button:disabled { opacity:.45; cursor:default; }
+  pre#log { margin:14px 0 0; max-height:220px; overflow:auto; background:#0a0a0c; border:1px solid #1e1e22; border-radius:10px; padding:10px 12px; color:#8f8a82; font-size:11.5px; line-height:1.6; white-space:pre-wrap; }
+  .path { color:#6e6961; font-size:11.5px; word-break:break-all; margin-top:12px; white-space:pre-wrap; }
+  .done { color:var(--ok); }
+
+  /* 画质档位 */
+  .qz-head { display:flex; align-items:baseline; gap:10px; margin-bottom:12px; }
+  .qz-head b { font-size:14px; font-weight:600; }
+  .qz-head span { color:#7d7871; font-size:12px; }
+  .qz { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; }
+  .qz button {
+    text-align:left; padding:12px 14px; border-radius:12px; border:1px solid #2a2a30;
+    background:#0d0d10; color:#e9e5dd; line-height:1.35;
+  }
+  .qz button .n { display:block; font-size:16px; font-weight:700; letter-spacing:.3px; }
+  .qz button .s { display:block; color:#7d7871; font-size:11px; margin-top:3px; }
+  .qz button .r { display:block; color:#6e6961; font-size:10.5px; margin-top:2px; }
+  .qz button.on { border-color:var(--acc); background:#170d08; }
+  .qz button.on .n { color:var(--acc); }
+  .qz-note { color:#7d7871; font-size:11.5px; margin-top:10px; line-height:1.7; }
+  .adv { margin-top:14px; border-top:1px dashed #26262a; padding-top:12px; }
+  .adv summary { cursor:pointer; color:#7d7871; font-size:12px; }
+  .adv label { display:block; color:#8f8a82; font-size:12px; margin:10px 0 6px; }
+  .adv input { width:100%; font:12px/1.4 ui-monospace,monospace; color:#e9e5dd; background:#0a0a0c; border:1px solid #2a2a30; border-radius:8px; padding:9px 11px; }
+  .adv .hint { color:#6e6961; font-size:11px; margin-top:6px; line-height:1.6; }
+  .probe { color:#8f8a82; font-size:11.5px; margin-top:10px; min-height:16px; line-height:1.8; }
+  .probe b { color:#e9e5dd; font-weight:400; }
+  .bad { color:var(--warn); }
+
+  /* 弹窗 */
+  .mask { position:fixed; inset:0; background:#000c; display:none; align-items:center; justify-content:center; padding:24px; z-index:9999; }
+  .mask.on { display:flex; }
+  .dlg { width:min(620px, 100%); max-height:82vh; overflow:auto; border:1px solid #2f2f36; border-radius:16px; background:#0e0e11; box-shadow:0 24px 60px #000a; }
+  .dlg h3 { margin:0; padding:18px 20px 0; font-size:16px; }
+  .dlg .lead { color:#8f8a82; font-size:12.5px; padding:8px 20px 0; line-height:1.7; }
+  .iss { margin:14px 20px 0; border:1px solid #26262a; border-radius:10px; padding:12px 14px; background:#0a0a0c; }
+  .iss .t { color:var(--warn); font-size:13px; font-weight:600; }
+  .iss .d { color:#a29c93; font-size:12px; margin-top:5px; line-height:1.7; }
+  .iss .a { color:#7d7871; font-size:12px; margin-top:5px; line-height:1.7; }
+  .iss .a::before { content:"建议："; color:#8f8a82; }
+  .dlg .foot { display:flex; gap:10px; justify-content:flex-end; padding:18px 20px 20px; flex-wrap:wrap; }
+  .dlg .foot .sp { margin-right:auto; color:#7d7871; font-size:11.5px; align-self:center; }
+</style>
+</head>
+<body>
+  <h1>DSH PV · world.execute (me)<span class="tag">PC 独有</span></h1>
+  <div class="sub">第三方离线渲染工程 · 作者 MisakaZentai</div>
+
+  <div class="note">
+    这支 PV 不是网页播放器，而是一套 <b>Python + Electron + ffmpeg 的离线渲染工程</b>：
+    左边是 DSH 聊天窗口逐帧截图，右边是 TUI 可视化，全部由代码生成。
+    <b>需要先在本机渲染成视频才能观看</b>，首次约 <b>10–30 分钟</b>（取决于 CPU），渲染在后台进行，期间界面可能会略卡，属于正常现象。
+    <br>工程母版是 <b>1280×720 / 24fps 的像素画</b>，4K、2K 都是它的整数倍最近邻放大，帧率统一 24fps。
+    <br>代码 MIT，画面 CC BY-NC-SA 4.0；歌曲使用应用内已内置的 world.execute (me) 音频。
+    <br>仓库：<a href="https://github.com/MisakaZentai/world-execute-me-dsh-pv" data-external>github.com/MisakaZentai/world-execute-me-dsh-pv</a>
+  </div>
+
+  <div class="card">
+    <div class="qz-head"><b>画质档位</b><span>帧率统一 24fps（工程原生）</span></div>
+    <div class="qz" id="qz">
+      <button data-q="2160" class="on"><span class="n">4K</span><span class="s">3840×2160</span><span class="r">3× 最近邻</span></button>
+      <button data-q="1440"><span class="n">2K</span><span class="s">2560×1440</span><span class="r">2× 最近邻</span></button>
+      <button data-q="1080"><span class="n">1080P</span><span class="s">1920×1080</span><span class="r">1.5× 放大</span></button>
+      <button data-q="720"><span class="n">720P</span><span class="s">1280×720</span><span class="r">代码原生规格</span></button>
+    </div>
+    <div class="qz-note" id="qzNote"></div>
+
+    <details class="adv">
+      <summary>高级：指定 GPU 合成用的 Python（可选）</summary>
+      <label for="cudapy">带 PyTorch + CUDA 的 python.exe 路径</label>
+      <input id="cudapy" type="text" spellcheck="false" placeholder="例如 D:\ComfyUI\python_embeded\python.exe（留空则自动探测）" />
+      <div class="hint">
+        应用内置的便携 Python 不带 torch，所以默认只能用 CPU 合成。
+        机器上装过带 CUDA 的 PyTorch（比如 ComfyUI 自带的 python_embeded）时，把路径填进来就能开 GPU 合成。
+      </div>
+    </details>
+
+    <div class="probe" id="probe"></div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="phase" id="phase">准备就绪</div>
+      <div class="pct" id="pct">0%</div>
+    </div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="meta">
+      <span id="eta">预计剩余：—</span>
+      <span id="elapsed">已用：0s</span>
+      <span id="step"></span>
+    </div>
+    <div class="btns">
+      <button class="primary" id="start">开始渲染</button>
+      <button id="cancel" disabled>取消</button>
+      <button id="play" disabled>用系统播放器打开</button>
+    </div>
+    <div class="path" id="path"></div>
+    <pre id="log"></pre>
+  </div>
+
+  <div class="mask" id="mask">
+    <div class="dlg">
+      <h3 id="dlgTitle">环境检测</h3>
+      <div class="lead" id="dlgLead"></div>
+      <div id="dlgList"></div>
+      <div class="foot">
+        <span class="sp" id="dlgSp"></span>
+        <button id="dlgCancel">取消</button>
+        <button class="primary" id="dlgGo">仍然用 CPU 渲染</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const fmt = (s) => {
+    if (s == null) return '—';
+    if (s < 60) return Math.round(s) + ' 秒';
+    return Math.floor(s / 60) + ' 分 ' + Math.round(s % 60) + ' 秒';
+  };
+  const api = window.DshPv || (window.XmApp && window.XmApp.dshpv) || null;
+  let lastLogLen = 0;
+  let selected = '2160';
+  let pendingPlan = null;
+
+  function render(s) {
+    if (!s) return;
+    $('phase').textContent = s.message || s.phase || '';
+    $('phase').className = 'phase' + (s.phase === 'done' ? ' done' : '');
+    $('pct').textContent = Math.round(s.percent || 0) + '%';
+    $('bar').style.width = Math.max(0, Math.min(100, s.percent || 0)) + '%';
+    $('eta').textContent = '预计剩余：' + (s.running ? fmt(s.etaSec) : (s.phase === 'done' ? '0 秒' : '—'));
+    $('elapsed').textContent = '已用：' + fmt(s.elapsedSec || 0);
+    $('step').textContent = s.phase ? '阶段：' + s.phase : '';
+    $('start').disabled = !!s.running;
+    $('cancel').disabled = !s.running;
+    $('play').disabled = !s.hasOutput;
+    $('path').textContent = '输出文件：' + (s.output || '') +
+      (s.gpuRender ? '\n合成：GPU' : '') + (s.encoder ? '\n导出编码：' + s.encoder : '');
+    if (s.error) $('path').textContent += '\n错误：' + s.error;
+    if (Array.isArray(s.log)) {
+      if (s.log.length !== lastLogLen) {
+        $('log').textContent = s.log.join('\n');
+        $('log').scrollTop = $('log').scrollHeight;
+        lastLogLen = s.log.length;
+      }
+    }
+    if (s.quality) syncQuality(s.quality);
+  }
+
+  const NOTES = {
+    '2160': '4K 是 720p 母版的 3× 最近邻放大，像素完全无损，但文件最大、编码最久。',
+    '1440': '2K 是 2× 最近邻放大，像素完全无损，体积和耗时都约为 4K 的一半。',
+    '1080': '1080P 是 1.5× 放大，像素画不是整数倍，边缘会有极轻微的不均匀。',
+    '720': '720P 是工程原生规格，1280×720 逐像素输出，最快也最小。',
+  };
+  function updateNote() { $('qzNote').textContent = NOTES[selected] || ''; }
+  function syncQuality(id) {
+    if (!id || id === selected) return;
+    selected = id;
+    for (const b of document.querySelectorAll('#qz button')) b.classList.toggle('on', b.dataset.q === id);
+    updateNote();
+  }
+
+  function showDialog(rep, onGo) {
+    pendingPlan = onGo;
+    const issues = rep.issues || [];
+    $('dlgTitle').textContent = '这台机器有 ' + issues.length + ' 项不满足 GPU 渲染条件';
+    $('dlgLead').textContent = (rep.cpu || 'CPU') + ' · ' + rep.cores + ' 核 · ' + rep.ramGB + ' GB 内存' +
+      (rep.freeGB != null ? ' · 磁盘剩余 ' + rep.freeGB + ' GB' : '');
+    const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    $('dlgList').innerHTML = issues.map((it) =>
+      '<div class="iss"><div class="t">' + esc(it.title) + '</div>' +
+      '<div class="d">' + esc(it.detail) + '</div>' +
+      '<div class="a">' + esc(it.advice) + '</div></div>').join('');
+    const hw = rep.encoderH264 || rep.encoderHevc;
+    $('dlgSp').textContent = hw
+      ? '导出仍然会用硬件编码（' + hw.replace(/^h264_|^hevc_/, '') + '），只慢合成这一段'
+      : '导出也只能走 CPU 编码，整体会明显慢一些';
+    $('dlgGo').textContent = hw ? '用 CPU 合成，GPU 导出' : '仍然用 CPU 渲染';
+    $('mask').classList.add('on');
+  }
+
+  function hideDialog() {
+    $('mask').classList.remove('on');
+    pendingPlan = null;
+  }
+
+  function cudaPath() {
+    const v = ($('cudapy').value || '').trim();
+    return v || undefined;
+  }
+
+  async function begin() {
+    if (!api) return;
+    $('start').disabled = true;
+    $('probe').textContent = '正在检测环境（试编硬件编码器，约 5–15 秒）…';
+    let rep;
+    try {
+      rep = await api.detect(selected);
+    } catch (e) {
+      $('probe').innerHTML = '<span class="bad">检测失败：' + String((e && e.message) || e) + '，将直接按 CPU 渲染。</span>';
+      rep = { issues: [], gpuRender: false, encoderH264: null, encoderHevc: null, cpu: '', cores: 0, ramGB: 0 };
+    }
+    const hwName = rep.encoderH264 || rep.encoderHevc;
+    $('probe').innerHTML =
+      'CPU <b>' + rep.cores + ' 核</b> · 内存 <b>' + rep.ramGB + ' GB</b>' +
+      (rep.freeGB != null ? ' · 磁盘 <b>' + rep.freeGB + ' GB</b>' : '') +
+      ' · GPU 合成 <b class="' + (rep.gpuRender ? '' : 'bad') + '">' + (rep.gpuRender ? '可用' : '不可用') + '</b>' +
+      ' · 硬件编码 <b class="' + (hwName ? '' : 'bad') + '">' + (hwName ? hwName.replace(/^h264_|^hevc_/, '') : '无') + '</b>';
+
+    const plan = {
+      gpuRender: !!rep.gpuRender,
+      cudaPython: rep.cudaPython || cudaPath(),
+      encoderH264: rep.encoderH264,
+      encoderHevc: rep.encoderHevc,
+    };
+    if (rep.issues && rep.issues.length) {
+      showDialog(rep, function () {
+        hideDialog();
+        $('start').disabled = true;
+        api.start({ quality: selected, plan: plan });
+      });
+      return;
+    }
+    await api.start({ quality: selected, plan: plan });
+  }
+
+  for (const b of document.querySelectorAll('#qz button')) {
+    b.onclick = function () {
+      selected = b.dataset.q;
+      for (const x of document.querySelectorAll('#qz button')) x.classList.toggle('on', x === b);
+      updateNote();
+    };
+  }
+  $('dlgCancel').onclick = function () { hideDialog(); $('start').disabled = false; };
+  $('dlgGo').onclick = function () { if (pendingPlan) pendingPlan(); };
+
+  async function refresh() {
+    if (!api) { $('phase').textContent = '浏览器模式不支持渲染，请在 APP 里打开'; return; }
+    updateNote();
+    render(await api.status());
+  }
+
+  if (api) {
+    api.onUpdate(render);
+    $('start').onclick = begin;
+    $('cancel').onclick = function () { api.cancel(); };
+    $('play').onclick = function () { api.open(); };
+    refresh();
+  } else {
+    refresh();
+  }
+</script>
+</body>
+</html>

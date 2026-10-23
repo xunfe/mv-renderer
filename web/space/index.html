@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>航天简史 · A Short History of Spaceflight</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<style>
+  :root { color-scheme: dark; --or:#ff6a2b; --wh:#f2f4f8; --bg:#05060a; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  #wrap { position: absolute; inset: 0 0 58px 0; display: flex; align-items: center; justify-content: center; }
+  #c { width: 100%; height: 100%; object-fit: contain; display: block; cursor: pointer; background: #000; }
+  #ui {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 58px; box-sizing: border-box;
+    padding: 6px 14px 8px; background: #07080c; border-top: 1px solid #171a22;
+    font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #8b93a3;
+  }
+  #screen { position: relative; height: 16px; margin-bottom: 2px; }
+  #screen input { width: 100%; margin: 0; accent-color: var(--or); }
+  #info { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #info b { color: var(--or); font-weight: 500; }
+  #info .sep { color: #2c3240; margin: 0 8px; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1920" height="1080"></canvas></div>
+<div id="ui">
+  <div id="screen"><input id="scrub" type="range" min="0" max="251" step="0.01" value="0" /></div>
+  <div id="info"></div>
+</div>
+<script src="/space/rec-ui.js"></script>
+<script src="/space/mv.js"></script>
+</body>
+</html>

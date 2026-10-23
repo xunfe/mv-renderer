@@ -1,0 +1,19 @@
+import{J as e,L as t,Q as n,T as r,U as i,_ as a,bt as o,lt as s,q as c,tt as l,ut as u,w as d,xt as f}from"./gl-DcsgeOjJ.js";var p=e=>{let t=e/255;return t<=.04045?t/12.92:((t+.055)/1.055)**2.4};function m(e,t,n){let i=n.cell,o=i*t.aspect,s=e.width/r,c=n.only?t.ramp.map((e,t)=>t).filter(e=>e>0&&n.only.includes(t.ramp[e])):null,l=e=>c&&c.length?c[Math.min(c.length-1,Math.round(e*(c.length-1)))]:t.level(e),u=e.getContext(`2d`,{willReadFrequently:!0}).getImageData(0,0,e.width,e.height).data,f=(t,n)=>{let r=(Math.min(e.height-1,Math.round(n*s))*e.width+Math.min(e.width-1,Math.round(t*s)))*4;return[u[r],u[r+1],u[r+2],u[r+3]]},m=[];for(let e=i/2;e<d;e+=i)for(let s=o/2;s<r;s+=o){let r=0,c=0,u=0;for(let[t,n]of[[-.25,-.25],[.25,-.25],[-.25,.25],[.25,.25]]){let a=f(s+t*o,e+n*i),l=a[3]/255;r+=p(a[0])*l,c+=p(a[1])*l,u+=p(a[2])*l}r/=4,c/=4,u/=4;let d=n.lum===`max`?Math.max(r,c,u):.2126*r+.7152*c+.0722*u,h=Math.max(0,d*(n.gain??1))**+(n.gamma??.6);if(h+=(a(s,e,n.seed??3)-.5)*(n.dither??.5)/t.n,h<(n.threshold??.06))continue;let g=Math.max(r,c,u,1e-4),_=n.boost??1;m.push({x:s,y:e,g:l(Math.min(1,h)),color:[r/g*_,c/g*_,u/g*_],l:Math.min(1,h)})}return m}var h=class{atlas;max;count=0;geo;iPos;iRot;iCol;iGly;mat;scene=new o;cam;constructor(a,o,p={}){this.atlas=a,this.max=o;let m=p.size??22,h=p.fov??35;this.cam=new s(h,r/d,1,2e4),this.cam.position.set(0,0,d/2/Math.tan(n.degToRad(h/2))),this.cam.lookAt(0,0,0);let g=new u(m*a.aspect,m);this.geo=new e,this.geo.index=g.index,this.geo.setAttribute(`position`,g.getAttribute(`position`)),this.geo.setAttribute(`uv`,g.getAttribute(`uv`)),this.iPos=new c(new Float32Array(o*4),4),this.iRot=new c(new Float32Array(o*3),3),this.iCol=new c(new Float32Array(o*4),4),this.iGly=new c(new Float32Array(o),1);for(let e of[this.iPos,this.iRot,this.iCol,this.iGly])e.setUsage(t);this.geo.setAttribute(`iPos`,this.iPos),this.geo.setAttribute(`iRot`,this.iRot),this.geo.setAttribute(`iCol`,this.iCol),this.geo.setAttribute(`iGly`,this.iGly),this.mat=new f({glslVersion:i,uniforms:{atlas:{value:a.texture},n:{value:a.n}},vertexShader:`
+        in vec4 iPos; in vec3 iRot; in vec4 iCol; in float iGly;
+        out vec2 vUv; out vec4 vCol; flat out float vGly;
+        mat3 rx(float a) { float c = cos(a), s = sin(a); return mat3(1, 0, 0, 0, c, s, 0, -s, c); }
+        mat3 ry(float a) { float c = cos(a), s = sin(a); return mat3(c, 0, -s, 0, 1, 0, s, 0, c); }
+        mat3 rz(float a) { float c = cos(a), s = sin(a); return mat3(c, s, 0, -s, c, 0, 0, 0, 1); }
+        void main() {
+          vUv = uv; vCol = iCol; vGly = iGly;
+          vec3 p = rz(iRot.z) * ry(iRot.y) * rx(iRot.x) * (position * iPos.w) + iPos.xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+        }`,fragmentShader:`
+        uniform sampler2D atlas; uniform float n;
+        in vec2 vUv; in vec4 vCol; flat in float vGly;
+        out vec4 fragColor;   // (with glslVersion GLSL3, three r186 declares no output of its own)
+        void main() {
+          float a = texture(atlas, vec2((vGly + vUv.x) / n, vUv.y)).a * vCol.a;
+          if (a < 0.003) discard;
+          fragColor = vec4(vCol.rgb * a, a);
+        }`,transparent:!0,depthTest:!1,depthWrite:!1,side:2,blending:5,blendEquation:100,blendSrc:201,blendDst:p.blend===`normal`?205:201});let _=new l(this.geo,this.mat);_.frustumCulled=!1,this.scene.add(_)}set(e,t,n,i,a,o,s,c,l,u,f=1){this.iPos.setXYZW(e,t-r/2,d/2-n,i,c),this.iRot.setXYZ(e,a,o,s),this.iCol.setXYZW(e,u[0],u[1],u[2],f),this.iGly.setX(e,l)}render(e,t,n){this.count=Math.min(n,this.max),this.geo.instanceCount=this.count;for(let e of[this.iPos,this.iRot,this.iCol,this.iGly])e.needsUpdate=!0,e.clearUpdateRanges(),e.addUpdateRange(0,this.count*e.itemSize);e.setRenderTarget(t),e.render(this.scene,this.cam)}};export{m as n,h as t};

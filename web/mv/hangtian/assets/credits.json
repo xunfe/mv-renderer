@@ -1,0 +1,248 @@
+[
+ {
+  "key": "art2_launch",
+  "kind": "img",
+  "src": "assets/art2_launch.jpg",
+  "credit": "NASA / Artemis II launch, 2026-04-01"
+ },
+ {
+  "key": "art2_launch2",
+  "kind": "img",
+  "src": "assets/art2_launch2.jpg",
+  "credit": "NASA / Artemis II launch, 2026-04-01"
+ },
+ {
+  "key": "art2_earthset",
+  "kind": "img",
+  "src": "assets/art2_earthset.jpg",
+  "credit": "NASA / Orion Earthset, Artemis II, 2026"
+ },
+ {
+  "key": "art2_earthrise",
+  "kind": "img",
+  "src": "assets/art2_earthrise.jpg",
+  "credit": "NASA / Earthrise from Orion, Artemis II, 2026"
+ },
+ {
+  "key": "art2_crew",
+  "kind": "img",
+  "src": "assets/art2_crew.jpg",
+  "credit": "NASA / Artemis II crew with EGS, 2023"
+ },
+ {
+  "key": "falcon9",
+  "kind": "img",
+  "src": "assets/falcon9.jpg",
+  "credit": "NASA / Falcon 9 landing, Crew-12, 2026"
+ },
+ {
+  "key": "falcon9_land",
+  "kind": "img",
+  "src": "assets/falcon9_land.jpg",
+  "credit": "SpaceX / Falcon 9 first stage landing (CC0)"
+ },
+ {
+  "key": "earth1974",
+  "kind": "img",
+  "src": "assets/earth1974.jpg",
+  "credit": "NASA / Skylab, Earth from orbit, 1974"
+ },
+ {
+  "key": "earthrise",
+  "kind": "img",
+  "src": "assets/earthrise.jpg",
+  "credit": "NASA / Apollo 8 Earthrise, 1968-12-24"
+ },
+ {
+  "key": "a11_aldrin",
+  "kind": "img",
+  "src": "assets/a11_aldrin.jpg",
+  "credit": "NASA / AS11-40-5903, Buzz Aldrin, 1969"
+ },
+ {
+  "key": "a11_boot",
+  "kind": "img",
+  "src": "assets/a11_boot.jpg",
+  "credit": "NASA / AS11-40-5878, bootprint, 1969"
+ },
+ {
+  "key": "a11_flag",
+  "kind": "img",
+  "src": "assets/a11_flag.jpg",
+  "credit": "NASA / Apollo 11 flag, 1969"
+ },
+ {
+  "key": "mcc1969",
+  "kind": "img",
+  "src": "assets/mcc1969.jpg",
+  "credit": "NASA / Mission Control, Apollo 11, 1969"
+ },
+ {
+  "key": "saturn5",
+  "kind": "img",
+  "src": "assets/saturn5.jpg",
+  "credit": "NASA / Saturn V, Apollo 11 launch, 1969"
+ },
+ {
+  "key": "sputnik",
+  "kind": "img",
+  "src": "assets/sputnik.jpg",
+  "credit": "Wikimedia Commons / Sputnik 1 replica (PD)"
+ },
+ {
+  "key": "laika",
+  "kind": "img",
+  "src": "assets/laika.jpg",
+  "credit": "Wikimedia Commons / Laika, Sputnik 2 (PD)"
+ },
+ {
+  "key": "gagarin",
+  "kind": "img",
+  "src": "assets/gagarin.jpg",
+  "credit": "Wikimedia Commons / Yuri Gagarin, 1961 (PD)"
+ },
+ {
+  "key": "v2",
+  "kind": "img",
+  "src": "assets/v2.jpg",
+  "credit": "Wikimedia Commons / V-2 rocket (PD)"
+ },
+ {
+  "key": "dfh1",
+  "kind": "img",
+  "src": "assets/dfh1.jpg",
+  "credit": "Wikimedia Commons / Dongfanghong-1 (CC BY-SA)"
+ },
+ {
+  "key": "yang",
+  "kind": "img",
+  "src": "assets/yang.jpg",
+  "credit": "Wikimedia Commons / Yang Liwei spacesuit (CC BY-SA)"
+ },
+ {
+  "key": "challenger",
+  "kind": "img",
+  "src": "assets/challenger.jpg",
+  "credit": "NASA / STS-51-L crew (PD)"
+ },
+ {
+  "key": "columbia",
+  "kind": "img",
+  "src": "assets/columbia.jpg",
+  "credit": "NASA / STS-107 crew (PD)"
+ },
+ {
+  "key": "record_gold",
+  "kind": "img",
+  "src": "assets/record_gold.jpg",
+  "credit": "NASA / Voyager Golden Record cover (PD)"
+ },
+ {
+  "key": "voyager_model",
+  "kind": "img",
+  "src": "assets/voyager_model.jpg",
+  "credit": "NASA / Voyager proof test model, 1977"
+ },
+ {
+  "key": "jupiter",
+  "kind": "img",
+  "src": "assets/jupiter.jpg",
+  "credit": "NASA/JPL / Jupiter Great Red Spot (Juno)"
+ },
+ {
+  "key": "saturn",
+  "kind": "img",
+  "src": "assets/saturn.jpg",
+  "credit": "NASA/JPL / Saturn (Cassini)"
+ },
+ {
+  "key": "paleblue",
+  "kind": "img",
+  "src": "assets/paleblue.jpg",
+  "credit": "NASA/JPL / Pale Blue Dot, 1990"
+ },
+ {
+  "key": "change4",
+  "kind": "img",
+  "src": "assets/change4.jpg",
+  "credit": "NASA/JPL / Chang’e 4 lander (LROC)"
+ },
+ {
+  "key": "zhurong",
+  "kind": "img",
+  "src": "assets/zhurong.jpg",
+  "credit": "NASA/JPL / Zhurong rover (HiRISE)"
+ },
+ {
+  "key": "perseverance",
+  "kind": "img",
+  "src": "assets/perseverance.jpg",
+  "credit": "NASA/JPL / Perseverance selfie, 2021"
+ },
+ {
+  "key": "hubble",
+  "kind": "img",
+  "src": "assets/hubble.jpg",
+  "credit": "NASA/ESA / Hubble Deep Field"
+ },
+ {
+  "key": "webb",
+  "kind": "img",
+  "src": "assets/webb.jpg",
+  "credit": "NASA/ESA/CSA / JWST first deep field, 2022"
+ },
+ {
+  "key": "record_prep",
+  "kind": "img",
+  "src": "assets/record_prep.jpg",
+  "credit": "NASA/JPL / Preparing the Golden Record, 1977"
+ },
+ {
+  "key": "record_cover",
+  "kind": "img",
+  "src": "assets/record_cover.jpg",
+  "credit": "NASA/JPL / Golden Record cover"
+ },
+ {
+  "key": "art1_ignition",
+  "kind": "vid",
+  "src": "assets/art1_ignition.mp4",
+  "credit": "NASA / Artemis I launch, 2022-11-16"
+ },
+ {
+  "key": "art1_ascent",
+  "kind": "vid",
+  "src": "assets/art1_ascent.mp4",
+  "credit": "NASA / Artemis I ascent, 2022-11-16"
+ },
+ {
+  "key": "a11_launch",
+  "kind": "vid",
+  "src": "assets/a11_launch.mp4",
+  "credit": "NASA / Apollo 11 launch, 1969-07-16"
+ },
+ {
+  "key": "a11_eva",
+  "kind": "vid",
+  "src": "assets/a11_eva.mp4",
+  "credit": "NASA / Apollo 11 moonwalk, 1969"
+ },
+ {
+  "key": "perseverance_descent",
+  "kind": "vid",
+  "src": "assets/perseverance_descent.mp4",
+  "credit": "NASA/JPL / Perseverance descent, 2021-02-18"
+ },
+ {
+  "key": "rs25",
+  "kind": "vid",
+  "src": "assets/rs25.mp4",
+  "credit": "NASA / RS-25 engine test, 2025"
+ },
+ {
+  "key": "starship",
+  "kind": "vid",
+  "src": "assets/starship.mp4",
+  "credit": "NASA / Starship Flight 6 seen from ISS, 2024"
+ }
+]

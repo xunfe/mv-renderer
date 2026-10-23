@@ -1,0 +1,13 @@
+{
+  "name": "mv-renderer-pc",
+  "productName": "MV渲染器",
+  "version": "1.0.0",
+  "description": "MV渲染器 · 本地渲染 / 可录制 / 可导入（PC 版）",
+  "main": "main.js",
+  "author": "DSH",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  }
+}

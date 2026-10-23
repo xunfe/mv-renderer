@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="cache-control" content="no-store">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>一封情书 · DeepSeek（实时渲染）</title>
+<style>
+  html, body { margin:0; height:100%; background:#03070c; overflow:hidden; }
+  #wrap { position:fixed; inset:0 0 46px 0; display:grid; place-items:center; }
+  canvas { display:block; max-width:100%; max-height:100%; background:#000;
+           box-shadow:0 0 100px rgba(120,180,220,.06); }
+  #bar { position:fixed; left:0; right:0; bottom:0; height:46px; box-sizing:border-box;
+         display:flex; align-items:center; gap:12px; padding:0 14px;
+         background:rgba(6,12,18,.94); border-top:1px solid rgba(140,190,220,.16);
+         color:#c8d8e4; font:12px/1.2 ui-sans-serif,system-ui; opacity:.9;
+         transition:opacity .35s; }
+  body.playing:not(.showbar) #bar { opacity:0; pointer-events:none; }
+  button { background:rgba(220,180,120,.12); color:#e8f2fa; border:1px solid rgba(140,190,220,.34);
+           border-radius:999px; padding:6px 16px; font:700 11px ui-sans-serif; letter-spacing:.1em; }
+  #scrub { flex:1; accent-color:#7fb8d8; }
+  #info { font-variant-numeric:tabular-nums; opacity:.75; min-width:210px; text-align:right; }
+  #q { background:rgba(10,18,26,.9); color:#d5e6f2; border:1px solid rgba(140,190,220,.35);
+       border-radius:8px; padding:5px 8px; font:600 11px ui-sans-serif; letter-spacing:.04em; outline:none; }
+  #hint { opacity:.4; font-size:11px; }
+  #err{display:none;position:fixed;left:8px;right:8px;top:8px;z-index:99;background:#400;color:#fdd;
+       font:12px/1.4 monospace;padding:8px;white-space:pre-wrap}
+  body.clean #bar { display:none; }
+  body.clean #wrap { inset:0; }
+  #start { position:fixed; inset:0; display:grid; place-items:center; z-index:5;
+           background:radial-gradient(circle at 50% 42%,rgba(6,14,22,.30),rgba(3,6,10,.80));
+           color:#e9f1f8; cursor:pointer; transition:opacity .5s; }
+  #start b { display:block; text-align:center; font:700 34px "Noto Serif CJK SC",serif; letter-spacing:.32em;
+             text-shadow:0 0 28px rgba(150,200,235,.45); }
+  #start span { display:block; margin-top:14px; text-align:center; font:600 11px ui-sans-serif;
+                letter-spacing:.42em; color:rgba(233,241,248,.6); }
+  body.playing #start { opacity:0; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="err"></div>
+<div id="wrap"><canvas id="c" width="1920" height="1080"></canvas></div>
+<div id="start"><div><b>一封情书</b><span>DEEPSEEK · 写给中国</span><span>点击开始 · TAP TO PLAY</span></div></div>
+<div id="bar">
+  <button id="play">PLAY</button>
+  <input id="scrub" type="range" min="0" max="1" step="0.001" value="0">
+  <span id="info">0.00s</span>
+  <select id="q" title="画质（4K 只建议电脑/录制时用）">
+    <option value="1080p60">1080P 60 · 默认</option>
+    <option value="4k30">4K 30</option>
+    <option value="4k60">4K 60</option>
+    <option value="1080p30">1080P 30</option>
+    <option value="720p30">720P 30</option>
+  </select>
+  <span id="hint">空格 播放 · ←→ 5s · M 静音</span>
+</div>
+<audio id="a" src="audio.m4a" preload="auto"></audio>
+<img id="ds-logo" src="memes/logo.png" alt="" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0">
+<img id="mem-a" src="memes/a.png" alt="" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0">
+<img id="mem-b" src="memes/b.png" alt="" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0">
+<img id="mem-c" src="memes/c.png" alt="" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0">
+<script src="engine.js?v=1"></script>
+<script src="scenes.js?v=1"></script>
+<script src="mv.js?v=1"></script>
+</body>
+</html>

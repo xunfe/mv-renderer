@@ -1,0 +1,53 @@
+// MV渲染器 · 安卓壳（WebView + 本地 AssetServer）
+// 网页资源不直接放在 src/main/assets 下，由 tools/prepare_assets.py 从仓库根目录 web/ 生成。
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.dsha.xmmv'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.dsha.xmmv'
+        minSdk 24
+        targetSdk 35
+        // 1.0.0 -> 10000，保证能覆盖旧的 10.x（versionCode 27 及以下）
+        versionCode 10000
+        versionName '1.0.0'
+    }
+
+    signingConfigs {
+        release {
+            // 仓库里不放私钥：在 android/keystore.properties 写
+            def props = new Properties()
+            def f = rootProject.file('keystore.properties')
+            if (f.exists()) {
+                props.load(new FileInputStream(f))
+                storeFile file(props['storeFile'])
+                storePassword props['storePassword']
+                keyAlias props['keyAlias']
+                keyPassword props['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    // assets 由 prepare_assets.py 生成：assets/www、assets/engine、assets/execute
+    sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets']
+        }
+    }
+}

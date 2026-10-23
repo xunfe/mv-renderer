@@ -1,0 +1,28 @@
+# 签名与私钥
+*.jks
+*.keystore
+*.p12
+keystore.properties
+
+# 构建产物
+*.apk
+*.idsig
+*.zip
+android/.gradle/
+android/.idea/
+android/local.properties
+android/app/build/
+android/app/src/main/assets/
+pc/web/
+pc/app/
+pc/runtime/
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+
+# 只有个人设备才有的音频（购买的单曲，不随仓库分发）
+web/execute/song.flac
+web/execute/song.m4a
+web/execute/song.wav

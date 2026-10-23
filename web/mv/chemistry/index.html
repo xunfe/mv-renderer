@@ -1,0 +1,70 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="cache-control" content="no-store">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>化学简史 · 118 种元素 · 代码 MV</title>
+<style>
+  html, body { margin:0; height:100%; background:#03060a; overflow:hidden; }
+  #wrap { position:fixed; inset:0 0 46px 0; display:grid; place-items:center; }
+  canvas { display:block; max-width:100%; max-height:100%; background:#000;
+           box-shadow:0 0 120px rgba(120,190,220,.05); }
+  #bar { position:fixed; left:0; right:0; bottom:0; height:46px; box-sizing:border-box;
+         display:flex; align-items:center; gap:12px; padding:0 14px;
+         background:rgba(6,12,18,.94); border-top:1px solid rgba(120,190,220,.16);
+         color:#c9dbe2; font:12px/1.2 ui-sans-serif,system-ui; opacity:.92;
+         transition:opacity .35s; }
+  body.playing:not(.showbar) #bar { opacity:0; pointer-events:none; }
+  button { background:rgba(120,190,220,.12); color:#e3f1f4; border:1px solid rgba(120,190,220,.3);
+           border-radius:999px; padding:6px 16px; font:700 11px ui-sans-serif; letter-spacing:.1em; }
+  #scrub { flex:1; accent-color:#e2a45e; }
+  #info { font-variant-numeric:tabular-nums; opacity:.75; min-width:250px; text-align:right; }
+  #q { background:rgba(10,20,30,.9); color:#d9e8ec; border:1px solid rgba(120,190,220,.35);
+       border-radius:8px; padding:5px 8px; font:600 11px ui-sans-serif; letter-spacing:.04em; outline:none; }
+  #hint { opacity:.4; font-size:11px; }
+  #err{display:none;position:fixed;left:8px;right:8px;top:8px;z-index:99;background:#400;color:#fdd;
+       font:12px/1.4 monospace;padding:8px;white-space:pre-wrap}
+  body.clean #bar { display:none; }
+  body.clean #wrap { inset:0; }
+  body.still #start { display:none; }
+  #start { position:fixed; inset:0; display:grid; place-items:center; z-index:5;
+           background:radial-gradient(circle at 50% 42%,rgba(6,12,20,.45),rgba(3,6,10,.85));
+           color:#eef2ee; cursor:pointer; transition:opacity .5s; }
+  #start b { display:block; text-align:center; font:600 36px "Noto Serif SC","Source Han Serif SC",serif; letter-spacing:.34em;
+             text-shadow:0 0 30px rgba(127,212,230,.45); }
+  #start span { display:block; margin-top:14px; text-align:center; font:600 11px ui-sans-serif;
+                letter-spacing:.42em; color:rgba(238,242,238,.6); }
+  body.playing #start { opacity:0; pointer-events:none; }
+  #load { position:fixed; left:50%; bottom:70px; transform:translateX(-50%); z-index:6;
+          color:rgba(200,225,235,.55); font:11px ui-sans-serif; letter-spacing:.2em; }
+</style>
+</head>
+<body>
+<div id="err"></div>
+<div id="wrap"><canvas id="c" width="1920" height="1080"></canvas></div>
+<div id="start"><div><b>化学简史</b><span>118 ELEMENTS · 点击开始</span></div></div>
+<div id="load">LOADING PLATES…</div>
+<div id="bar">
+  <button id="play">PLAY</button>
+  <input id="scrub" type="range" min="0" max="1" step="0.001" value="0">
+  <span id="info">0.00s</span>
+  <select id="q" title="画质（4K 只建议电脑/录制时用）">
+    <option value="1080p60">1080P 60 · 默认</option>
+    <option value="4k30">4K 30</option>
+    <option value="4k60">4K 60</option>
+    <option value="1080p30">1080P 30</option>
+    <option value="720p30">720P 30</option>
+  </select>
+  <span id="hint">空格 播放 · ←→ 5s · M 静音 · H 隐藏</span>
+</div>
+<audio id="a" src="audio.m4a" preload="auto"></audio>
+<script src="data.js?v=8"></script>
+<script src="engine.js?v=8"></script>
+<script src="scenes.js?v=8"></script>
+<script src="scenes2.js?v=8"></script>
+<script src="mv.js?v=8"></script>
+</body>
+</html>
+
+

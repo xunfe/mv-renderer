@@ -1,0 +1,14 @@
+import{m as e}from"./type-SGpGH0z0.js";import{a as t,t as n}from"./util-BFmWaMH0.js";import{n as r,r as i}from"./palette-BceqUlax.js";var a=e({GLSL_MASK:()=>d,MASK:()=>l,drawMask2D:()=>u,sparkHead:()=>s,sparkHead2D:()=>c,sparkParticles:()=>o});function o(e,i,a,o={}){let s=o.life??.45,c=o.speed??260,l=o.gravity??520,u=o.intensity??1,d=o.seed??1,f=typeof o.rate==`function`?o.rate:null,p=f?o.rateMax:o.rate??90;if(!(p>0))return;let m=Math.floor((i-s)*p),h=Math.floor(i*p);for(let g=m;g<=h;g++){let m=g/p;if(m>i||f&&t(g,d+3)*p>=f(m))continue;let h=i-m,_=a(m);if(!_)continue;let v=t(g,d)*n,y=c*(.25+t(g,d+1)**2*1.2),b=s*(.35+.65*t(g,d+2));if(h>b)continue;let x=Math.cos(v)*y,S=Math.sin(v)*y-c*.3,C=_.x+x*h,w=_.y+S*h+.5*l*h*h,T=.018,E=_.x+x*Math.max(0,h-T),D=_.y+S*Math.max(0,h-T)+.5*l*Math.max(0,h-T)**2,O=1-h/b,k=O*O,A=[(r.signal[0]+(1-r.signal[0])*k)*2.2*u,(r.signal[1]+(.8-r.signal[1])*k)*2.2*u,(r.signal[2]+(.5-r.signal[2])*k)*2.2*u];e.seg2(E,D,C,w,(o.width??1.6)*(.5+O*.7),A,Math.min(1,O*1.4))}}function s(e,i,a,o,s=1,c=1){let l=c*(.85+.15*Math.sin(o*91.7)*Math.sin(o*57.3));e.seg2(i,a,i+.01,a,26*s,[r.signal[0]*.5*l,r.signal[1]*.5*l,r.signal[2]*.5*l],.35),e.seg2(i,a,i+.01,a,12*s,[r.ember[0]*2.5*l,r.ember[1]*2.5*l,r.ember[2]*2.5*l],.8),e.seg2(i,a,i+.01,a,5*s,[6*l,5*l,4*l],1);for(let r=0;r<4;r++){let c=n/4*r+o*3+.4,u=(9+5*t(Math.floor(o*30),r))*s;e.seg2(i,a,i+Math.cos(c)*u,a+Math.sin(c)*u,1.2*s,[3*l,1.2*l,.4*l],.8)}}function c(e,t,r,a,o=1){let s=e.createRadialGradient(t,r,0,t,r,22*o);s.addColorStop(0,`rgba(255,250,240,1)`),s.addColorStop(.18,`rgba(255,170,90,0.95)`),s.addColorStop(.45,i(`signal`,.45)),s.addColorStop(1,i(`signal`,0)),e.fillStyle=s,e.beginPath(),e.arc(t,r,22*o,0,n),e.fill()}var l={eyeX:.3,eyeY:-.16,eyeR:.075,smileCY:-.08,smileR:.5,smileA0:25*Math.PI/180,smileA1:155*Math.PI/180,smileW:.06};function u(e,t,r,a,o=0,s={}){e.save(),e.translate(t,r),e.rotate(o),e.globalAlpha*=s.alpha??1,e.fillStyle=s.face??i(`bone`),e.beginPath(),e.arc(0,0,a,0,n),e.fill(),e.fillStyle=s.ink??i(`ink`);for(let t of[-1,1])e.beginPath(),e.arc(t*l.eyeX*a,l.eyeY*a,l.eyeR*a,0,n),e.fill();e.strokeStyle=s.ink??i(`ink`),e.lineWidth=l.smileW*a,e.lineCap=`round`,e.beginPath(),e.arc(0,l.smileCY*a,l.smileR*a,l.smileA0,l.smileA1),e.stroke(),e.restore()}var d=`
+float sdMaskInk(vec2 p) {
+  float e = min(length(p - vec2(-${l.eyeX}, ${l.eyeY})), length(p - vec2(${l.eyeX}, ${l.eyeY}))) - ${l.eyeR};
+  vec2 q = p - vec2(0.0, ${l.smileCY});
+  float a = atan(q.y, q.x);
+  float a0 = ${l.smileA0.toFixed(5)}, a1 = ${l.smileA1.toFixed(5)};
+  float s;
+  if (a > a0 && a < a1) s = abs(length(q) - ${l.smileR}) - ${(l.smileW/2).toFixed(4)};
+  else {
+    vec2 c0 = vec2(cos(a0), sin(a0)) * ${l.smileR}, c1 = vec2(cos(a1), sin(a1)) * ${l.smileR};
+    s = min(length(q - c0), length(q - c1)) - ${(l.smileW/2).toFixed(4)};
+  }
+  return min(e, s);
+}`;export{s as a,u as i,l as n,c as o,a as r,o as s,d as t};
