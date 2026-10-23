@@ -118,7 +118,7 @@ keyPassword=******
 ### Windows
 
 ```bash
-cp -r web pc/app/web                     # 或者直接让 Electron 指向 web/
+cp -r web pc/web                         # main.js 里的 WEB_ROOT 就是 pc/web
 cd pc
 npm install                              # 只有 adm-zip 一个依赖
 npx electron .                           # 开发模式
