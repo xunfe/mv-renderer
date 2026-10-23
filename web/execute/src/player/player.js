@@ -199,6 +199,8 @@ var Player = class {
 		this.t = this.end;
 		this.dirty = true;
 		this.ui.ended();
+		// 播完回到合集（由 /mv-return.js 接管；直接打开时回首页）
+		try { window.__mvFinished && window.__mvFinished(); } catch (e) {}
 	}
 	/** While the seek bar is dragged the size holds (no re-pick per frame); the release seeks once more and re-picks. */
 	scrub(on) {

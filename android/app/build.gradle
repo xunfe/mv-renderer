@@ -12,9 +12,9 @@ android {
         applicationId 'com.dsha.xmmv'
         minSdk 24
         targetSdk 35
-        // 1.0.0 -> 10000，保证能覆盖旧的 10.x（versionCode 27 及以下）
-        versionCode 10000
-        versionName '1.0.0'
+        // 1.0.1 -> 10001，保证能覆盖 1.0.0（10000）与旧的 10.x（versionCode 27 及以下）
+        versionCode 10001
+        versionName '1.0.1'
     }
 
     signingConfigs {

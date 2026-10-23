@@ -26,3 +26,7 @@ Thumbs.db
 web/execute/song.flac
 web/execute/song.m4a
 web/execute/song.wav
+
+# 《世界还在写》原版：仅授权内置，源码/角色素材/音频不随开源仓库分发
+web/mv/world/*
+!web/mv/world/README.md
