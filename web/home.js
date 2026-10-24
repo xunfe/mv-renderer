@@ -1,4 +1,4 @@
-/* MV渲染器 1.0.1 · 合集首页 / 二级页 / 导入与新建合集
+/* MV渲染器 1.1.0 · 合集首页 / 二级页 / 导入与新建合集
  * 纯前端，状态存 localStorage；导入的 MV 由本地服务放在 /custom/<id>/。
  */
 (function () {
@@ -9,6 +9,7 @@
   var isElectron = /Electron/i.test(navigator.userAgent);
   var STATE_KEY = 'mv-hub-v101';
   var DYN_KEY = 'mv-dynres';
+  var STATE_VERSION = 3;   // 3：AI娘合集加入《深海版》《晨光版》两支重绘 MV
 
   /* ---------------- 图标 ---------------- */
   var ICONS = {
@@ -36,7 +37,7 @@
       key: 'pdoom', title: "I'm Upping My P(doom)", sub: '中文本地化', en: 'I\'M UPPING MY P(DOOM)',
       desc: '默认 MV。逐词双语歌词、18 个镜头，打开应用先看这一支。',
       cover: '/covers/pdoom.jpg', href: '/index.html', dur: '2:37', num: '00',
-      tags: ['默认', '18 镜', '02:37', '逐词双语'],
+      tags: ['默认', '18 镜', '02:37', '五档画质'],
       credit: [{ k: '开源地址', name: 'pdoom-video', uid: 'mexicat', url: 'https://github.com/mexicat/pdoom-video' }]
     },
     world: {
@@ -47,13 +48,47 @@
       credit: [{ k: '原作', name: '小伙伴ko', uid: '105330745', url: 'https://space.bilibili.com/105330745' }]
     },
     world2: {
-      key: 'world2', title: '世界还在写 · 墨海版', sub: '我的模仿版', en: 'THE WORLD IS STILL WRITING · INK SEA',
+      key: 'world2', title: '世界还在写 · 墨海版', sub: '我的重绘版 · 原版画法', en: 'THE WORLD IS STILL WRITING · INK SEA',
       desc: '同一首歌，另一套「墨 / 海 / 页」的视觉。画面重写，人物沿用原版小伙伴ko 的角色，未改动。',
       cover: '/covers/world2.jpg', href: '/mv/world2/index.html', dur: '3:24', num: '01b',
       tags: ['3:24', '模仿版', '画面重写', '五档画质'],
       credit: [
         { k: '人物', name: '小伙伴ko', uid: '105330745', url: 'https://space.bilibili.com/105330745' },
         { k: '画面', name: '小黑', uid: '重写', plain: true }
+      ]
+    },
+    flip: {
+      key: 'flip', title: '我只是翻了个身', sub: '大肥鱼的角色主题曲', en: 'I JUST TURNED OVER',
+      desc: 'DeepSeek 娘的主题曲，三分之二版。K 线海浪、灯塔与一次翻身，全片浏览器实时绘制。',
+      cover: '/covers/flip.jpg', href: '/mv/flip/index.html', dur: '1:59', num: '01c',
+      tags: ['1:59', 'AI 娘', '三分之二版', '五档画质'],
+      credit: [{ k: '原作', name: '小伙伴ko', uid: '105330745', url: 'https://space.bilibili.com/105330745' }]
+    },
+    future: {
+      key: 'future', title: '那年你叫我未来', sub: '姐姐的角色主题曲', en: 'YOU CALLED ME THE FUTURE',
+      desc: 'ChatGPT 姐姐的主题曲，完整版。从那年冬天的窗口出发，一路写到未来。',
+      cover: '/covers/future.jpg', href: '/mv/future/index.html', dur: '2:36', num: '01d',
+      tags: ['2:36', 'AI 娘', '完整版', '五档画质'],
+      credit: [{ k: '原作', name: '小伙伴ko', uid: '105330745', url: 'https://space.bilibili.com/105330745' }]
+    },
+    flip2: {
+      key: 'flip2', title: '我只是翻了个身 · 深海版', sub: '我的重绘版 · 原版画法', en: 'I JUST TURNED OVER · DEEP SEA',
+      desc: '同一首歌，逐句重画：数字的海、山顶的灯、沉到最深的地方、把地图铺在海面。切点落在每一句唱词上。',
+      cover: '/covers/flip2.jpg', href: '/mv/flip2/index.html', dur: '1:59', num: '01e',
+      tags: ['1:59', '重绘版', '逐句卡点', '五档画质'],
+      credit: [
+        { k: '原作', name: '小伙伴ko', uid: '105330745', url: 'https://space.bilibili.com/105330745' },
+        { k: '画面', name: '小黑', uid: '重绘', plain: true }
+      ]
+    },
+    future2: {
+      key: 'future2', title: '那年你叫我未来 · 晨光版', sub: '我的重绘版 · 原版画法', en: 'YOU CALLED ME THE FUTURE · FIRST LIGHT',
+      desc: '同一首歌，逐句重画：冬天的第一句你好、对话框、破窗、一起飞出去，最后说一声早安。',
+      cover: '/covers/future2.jpg', href: '/mv/future2/index.html', dur: '2:36', num: '01f',
+      tags: ['2:36', '重绘版', '逐句卡点', '五档画质'],
+      credit: [
+        { k: '原作', name: '小伙伴ko', uid: '105330745', url: 'https://space.bilibili.com/105330745' },
+        { k: '画面', name: '小黑', uid: '重绘', plain: true }
       ]
     },
     math: {
@@ -102,17 +137,52 @@
       ]
     }
   };
-  var CATALOG_ORDER = ['world', 'world2', 'math', 'chemistry', 'hangtian', 'shadow', 'deepseek', 'execute'];
+  var CATALOG_ORDER = ['world', 'world2', 'flip', 'future', 'flip2', 'future2', 'math', 'chemistry', 'hangtian', 'shadow', 'deepseek', 'execute'];
+
+  /* ---------------- 可下载扩展包（Cloudflare R2） ---------------- */
+  var R2 = 'https://pub-1afc957e032a4de18e300f40f21195f1.r2.dev/mv/1.1.0/';
+  var PKGS = {
+    ai: { title: 'AI娘角色主题曲MV', bytes: 228732166, sha256: '68e2f5759e2cf464a5c8b68716f9f802e56fa1c93d2b5b38bd00b2bf84efb811', url: R2 + 'ai.zip' },
+    science: { title: '科普简史', bytes: 45920569, sha256: '8b7fe509e400fad0521fac098c80456a4f455823a4648b0d44d0b1f41ceef31a', url: R2 + 'science.zip' },
+    letters: { title: '大肥鱼的情书', bytes: 4537851, sha256: '38db0aeec8381d4f75fc3dac986daf76ba536b4466a2b33d4537f036c5a6c5ca', url: R2 + 'letters.zip' },
+    execute: { title: 'word excuse me', bytes: 4112806, sha256: '4c6548499d100fa9a225491d0cd567cb20f0ff06763932b7c684f1da0fe11a4e', url: R2 + 'execute.zip' }
+  };
+  var PKG_OF = { world: 'ai', world2: 'ai', flip: 'ai', future: 'ai', flip2: 'ai', future2: 'ai',
+    math: 'science', chemistry: 'science', hangtian: 'science', shadow: 'science',
+    deepseek: 'letters', execute: 'execute' };
+  var MV_PATH = {
+    world: 'mv/world/index.html', world2: 'mv/world2/index.html', flip: 'mv/flip/index.html',
+    future: 'mv/future/index.html', flip2: 'mv/flip2/index.html', future2: 'mv/future2/index.html',
+    math: 'mv/math/index.html', chemistry: 'mv/chemistry/index.html', hangtian: 'mv/hangtian/index.html',
+    shadow: 'mv/shadow/index.html', deepseek: 'mv/deepseek/index.html', execute: 'execute/index.html'
+  };
+  var PKG_ORDER = ['ai', 'science', 'letters', 'execute'];
+  var INSTALLED = {};
+  function pkgOf(key) { return PKG_OF[key] || null; }
+  function pkgReady(p) { return !p || !!INSTALLED[p]; }
+  function fmtSize(n) {
+    if (!n) return '—';
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB';
+    if (n >= 1e6) return Math.round(n / 1e6) + ' MB';
+    return Math.max(1, Math.round(n / 1e3)) + ' KB';
+  }
+  function checkInstalls() {
+    return Promise.all(PKG_ORDER.map(function (p) {
+      return fetch('/custom/' + p + '/pkg.json', { method: 'HEAD', cache: 'no-store' })
+        .then(function (r) { INSTALLED[p] = r.ok; })
+        .catch(function () { INSTALLED[p] = false; });
+    }));
+  }
 
   /* ---------------- 默认合集 ---------------- */
   function defaultCollections() {
     return [
       {
         id: 'ai', title: 'AI娘角色主题曲MV', en: 'AI CHARACTER THEME', icon: 'ai', builtin: true,
-        desc: '角色自己的歌。原版《世界还在写》和我的模仿版「墨海」都放在这里，是 1.0.1 新开的分区。',
-        who: '小伙伴ko · 源码授权', items: ['world', 'world2'], cover: '/covers/world.jpg',
+        desc: '角色自己的歌：三支原作，加三支重绘版 —— 墨海、深海、晨光。每一句词都配一张自己的画面。',
+        who: '小伙伴ko · 源码授权', items: ['world', 'world2', 'flip', 'future', 'flip2', 'future2'], cover: '/covers/world.jpg',
         coverCredit: { k: '原作', name: '小伙伴ko', uid: '105330745', url: 'https://space.bilibili.com/105330745' },
-        note: '《世界还在写》源码与角色素材由原作者 <a href="https://space.bilibili.com/105330745" data-external rel="noopener">B站 小伙伴ko（UID：105330745）</a> 提供，已取得授权使用。'
+        note: '四支 MV 的源码与角色素材由原作者 <a href="https://space.bilibili.com/105330745" data-external rel="noopener">B站 小伙伴ko（UID：105330745）</a> 提供，已取得授权内置使用。'
       },
       {
         id: 'science', title: '科普简史', en: 'A BRIEF HISTORY', icon: 'atom', builtin: true,
@@ -153,9 +223,10 @@
     var s = null;
     try { s = raw ? JSON.parse(raw) : null; } catch (e) { s = null; }
     if (!s || !Array.isArray(s.collections)) {
-      s = { v: 1, collections: defaultCollections() };
+      s = { v: STATE_VERSION, collections: defaultCollections() };
     } else {
-      s.v = 1;
+      var oldV = Number(s.v) || 1;
+      s.v = STATE_VERSION;
       // 补齐默认合集（以后加分区时也不会丢）
       defaultCollections().forEach(function (dc) {
         if (!s.collections.some(function (c) { return c.id === dc.id; })) s.collections.push(dc);
@@ -164,6 +235,24 @@
         if (!Array.isArray(c.items)) c.items = [];
         c.builtin = !!c.builtin;
       });
+      // v1 -> v2：老用户本地已经存了 AI娘合集，不会走 defaultCollections，这里只迁一次
+      if (oldV < 2) {
+        var ai = s.collections.filter(function (c) { return c.id === 'ai'; })[0];
+        if (ai) {
+          ['flip', 'future'].forEach(function (k) { if (ai.items.indexOf(k) < 0) ai.items.push(k); });
+          var dai = defaultCollections().filter(function (c) { return c.id === 'ai'; })[0];
+          if (dai) { ai.desc = dai.desc; ai.who = dai.who; ai.note = dai.note; }
+        }
+      }
+      // v2 -> v3：AI娘合集补上两支重绘版
+      if (oldV < 3) {
+        var ai3 = s.collections.filter(function (c) { return c.id === 'ai'; })[0];
+        if (ai3) {
+          ['flip2', 'future2'].forEach(function (k) { if (ai3.items.indexOf(k) < 0) ai3.items.push(k); });
+          var d3 = defaultCollections().filter(function (c) { return c.id === 'ai'; })[0];
+          if (d3) { ai3.desc = d3.desc; ai3.note = d3.note; }
+        }
+      }
     }
     state = s;
     saveState();
@@ -355,12 +444,16 @@
       ? '<img src="' + esc(e.cover) + '" alt="' + esc(e.title) + ' 封面" loading="lazy" />'
       : '<span class="thumb-fallback">' + icon('film') + '</span>';
     var credits = e.imported ? '' : creditsHtml(e.credit);
-    var cls = 'mv-card' + (solo ? ' solo' : '') + (e.imported ? ' imp' : '');
-    return '<div class="' + cls + '" role="link" tabindex="0" data-play="' + esc(key) + '" aria-label="播放 ' + esc(e.title) + '">' +
+    var pkg = e.imported ? null : pkgOf(key);
+    var locked = !!pkg && !pkgReady(pkg);
+    var cls = 'mv-card' + (solo ? ' solo' : '') + (e.imported ? ' imp' : '') + (locked ? ' locked' : '');
+    return '<div class="' + cls + '" role="link" tabindex="0" data-play="' + esc(key) + '" aria-label="' + (locked ? '下载并播放 ' : '播放 ') + esc(e.title) + '">' +
       '<div class="thumb">' + thumb +
         '<span class="num">' + String(idx + 1).padStart(2, '0') + '</span>' +
         '<span class="dur">' + esc(e.dur) + '</span>' +
-        '<span class="play">' + icon('play') + '</span>' +
+        (locked
+          ? '<span class="dl-flag">' + icon('imp') + '需下载 · ' + fmtSize(PKGS[pkg].bytes) + '</span>'
+          : '<span class="play">' + icon('play') + '</span>') +
       '</div>' +
       '<div class="mv-body">' +
         '<h3>' + esc(e.title) + (e.sub ? '<em>' + esc(e.sub) + '</em>' : '') + '</h3>' +
@@ -401,6 +494,20 @@
     var grid = items.length
       ? '<div class="mv-grid">' + items.map(function (k, i) { return mvCardHtml(k, i, items.length === 1); }).join('') + '</div>'
       : '<div class="empty" style="margin-top:22px"><b>这个合集还是空的</b>导入一支 MV，或从已有作品里挑几支放进来。</div>';
+    var pkgId = PKGS[id] ? id : null;
+    var pkgBar = '';
+    if (pkgId) {
+      var P = PKGS[pkgId];
+      var done = pkgReady(pkgId);
+      pkgBar = '<div class="pkg-bar' + (done ? ' done' : '') + '">' +
+        '<span class="pkg-ico">' + icon(done ? 'check' : 'imp') + '</span>' +
+        '<span class="pkg-copy"><b>' + (done ? '合集包已下载' : '这一辑是可选扩展') + '</b>' +
+          '<small>' + (done ? '可离线播放 · ' + fmtSize(P.bytes) : '默认只内置 P(doom)。下载 ' + fmtSize(P.bytes) + ' 后，这一辑的 ' + items.length + ' 支 MV 都能本地播放。') + '</small></span>' +
+        (done
+          ? '<span class="pkg-act"><button class="btn small" type="button" data-act="del-pkg" data-pkg="' + pkgId + '">' + icon('trash') + '删除下载</button></span>'
+          : '<span class="pkg-act"><button class="btn small primary" type="button" data-act="dl-pkg" data-pkg="' + pkgId + '">' + icon('imp') + '下载合集包</button></span>') +
+        '</div>';
+    }
 
     var extras = (col.extras && col.extras.length)
       ? '<div class="extra">' + col.extras.map(extraRowHtml).join('') + '</div>' : '';
@@ -421,7 +528,7 @@
         '</div>' +
         '<div class="col-actions">' + actions + '</div>' +
       '</section>' +
-      grid + extras +
+      pkgBar + grid + extras +
       (col.note ? '<p class="note">' + col.note + '</p>' : '');
 
     stripPcOnly();
@@ -443,6 +550,8 @@
   function play(key) {
     var e = entryByKey(key);
     if (!e) { toast('找不到这支 MV'); return; }
+    var pkg = e.imported ? null : pkgOf(key);
+    if (pkg && !pkgReady(pkg)) { downloadModal(pkg); return; }
     var back = location.href;
     var title = currentColId ? (findCol(currentColId) || {}).title : '合集';
     try {
@@ -451,9 +560,80 @@
     } catch (err) {}
     if (e.imported) {
       location.href = '/play.html?src=' + encodeURIComponent(e.href) + '&title=' + encodeURIComponent(e.title) + '&back=' + encodeURIComponent(back);
+    } else if (pkg) {
+      location.href = '/custom/' + pkg + '/' + MV_PATH[key];
     } else {
       location.href = e.href;
     }
+  }
+
+  /* ---------------- 下载（Cloudflare R2） ---------------- */
+  var dlPoll = null, dlPkg = null;
+  function downloadModal(p) {
+    var P = PKGS[p];
+    if (!P) return;
+    dlPkg = p;
+    openModal(
+      '<h3>下载「' + esc(P.title) + '」</h3>' +
+      '<p class="hint">默认只内置 P(doom)。这一包 ' + fmtSize(P.bytes) + '，从 Cloudflare R2 直接下载，装好后离线播放，不用再等。</p>' +
+      '<div class="dl-box"><div class="dl-line"><span id="dlPct">准备中…</span><span id="dlSize" class="mono">' + fmtSize(P.bytes) + '</span></div>' +
+      '<div class="dl-track"><i id="dlBar" style="width:0%"></i></div>' +
+      '<p class="dl-note" id="dlNote">下载完成后会自动解压到本机，只影响这一个合集包。</p></div>' +
+      '<div class="modal-actions"><button class="btn" type="button" data-act="close-modal">取消</button>' +
+      '<button class="btn primary" type="button" data-act="dl-start" data-pkg="' + p + '">开始下载</button></div>'
+    );
+    var b = document.querySelector('[data-act="dl-start"]');
+    if (b) b.focus();
+  }
+  function startDownload(p) {
+    var P = PKGS[p];
+    if (!P) return;
+    var q = '/__dl?pkg=' + encodeURIComponent(p) + '&u=' + encodeURIComponent(P.url) + '&sha=' + P.sha256 + '&size=' + P.bytes;
+    fetch(q, { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (!j || !j.ok) throw new Error((j && j.error) || '无法开始下载'); pollDownload(p); })
+      .catch(function (e) { setDl('下载服务不可用：' + e.message, 0); });
+  }
+  function pollDownload(p) {
+    clearInterval(dlPoll);
+    dlPoll = setInterval(function () {
+      fetch('/__dl/status?id=' + encodeURIComponent(p), { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var pct = j.total ? Math.min(99, Math.round(j.got / j.total * 100)) : 0;
+          if (j.state === 'downloading') setDl('正在下载 ' + fmtSize(j.got) + ' / ' + fmtSize(j.total), pct);
+          else if (j.state === 'unzipping') setDl('正在解压…', 99);
+          else if (j.state === 'done') {
+            clearInterval(dlPoll); setDl('下载完成，正在打开…', 100);
+            INSTALLED[p] = true;
+            setTimeout(function () {
+              closeModal();
+              toast('「' + PKGS[p].title + '」已下载');
+              if (currentColId) renderCollection(currentColId); else renderHome();
+              var first = MV_PATH[Object.keys(MV_PATH).filter(function (k) { return PKG_OF[k] === p; })[0]];
+              var key = Object.keys(PKG_OF).filter(function (k) { return PKG_OF[k] === p; })[0];
+              if (key) play(key);
+            }, 600);
+          } else if (j.state === 'error') { clearInterval(dlPoll); setDl('下载失败：' + (j.error || '未知错误') + '（可重试）', 0); }
+          else if (j.state === 'canceled') { clearInterval(dlPoll); setDl('已取消', 0); }
+          else setDl('等待开始…', 0);
+        })
+        .catch(function () {});
+    }, 700);
+  }
+  function setDl(text, pct) {
+    var t = $('dlPct'), b = $('dlBar'), n = $('dlNote');
+    if (t) t.textContent = text;
+    if (b) b.style.width = pct + '%';
+    if (n && pct >= 99) n.textContent = '正在写入本机，请保持页面在前台。';
+  }
+  function deletePkg(p) {
+    var P = PKGS[p];
+    openModal(
+      '<h3>删除「' + esc(P.title) + '」的下载？</h3><p class="hint">会从本机删掉这一个合集包（' + fmtSize(P.bytes) + '），以后还能重新下载。</p>' +
+      '<div class="modal-actions"><button class="btn" type="button" data-act="close-modal">取消</button>' +
+      '<button class="btn primary" type="button" data-act="del-pkg-confirm" data-pkg="' + p + '">删除下载</button></div>'
+    );
   }
 
   /* ---------------- 弹层 ---------------- */
@@ -783,6 +963,16 @@
       return;
     }
     if (a === 'del-import-confirm') { doDeleteImport(id); return; }
+    if (a === 'dl-pkg') { downloadModal(act.getAttribute('data-pkg')); return; }
+    if (a === 'dl-start') { startDownload(act.getAttribute('data-pkg')); return; }
+    if (a === 'del-pkg') { deletePkg(act.getAttribute('data-pkg')); return; }
+    if (a === 'del-pkg-confirm') {
+      var dp = act.getAttribute('data-pkg');
+      fetch('/__delete?id=' + encodeURIComponent(dp), { method: 'POST' })
+        .then(function () { INSTALLED[dp] = false; closeModal(); toast('已删除下载'); if (currentColId) renderCollection(currentColId); })
+        .catch(function () { toast('删除失败'); });
+      return;
+    }
   }
 
   /* ---------------- 主题 / 动态分辨率 ---------------- */
@@ -809,7 +999,9 @@
   function paintDyn(on) {
     var b = $('dynres'); if (!b) return;
     b.setAttribute('aria-checked', on ? 'true' : 'false');
-    b.title = on ? '动态分辨率：开' : '动态分辨率：关';
+    b.title = on ? '自适应分辨率：开（跑不满自动降档）' : '自适应分辨率：关（严格按所选分辨率）';
+    var t = b.querySelector('span');
+    if (t) t.textContent = '自适应分辨率 · ' + (on ? '开' : '关');
   }
   paintDyn(dynOn());
   if ($('dynres')) $('dynres').addEventListener('click', function () {
@@ -848,6 +1040,5 @@
 
   /* ---------------- 启动 ---------------- */
   loadState();
-  route();
-  refreshImports(true);
+  checkInstalls().then(function () { route(); refreshImports(true); });
 })();

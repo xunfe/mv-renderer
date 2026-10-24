@@ -1,13 +1,33 @@
 # MV渲染器 · MV Renderer
 
 > 一套完全离线的「代码音乐视频」播放器。同一份网页资源，两个壳：**Android WebView** 与 **Windows Electron**。
-> 内置 9 部作品，按「合集」整理：默认 P(doom) 置顶，另设 AI娘角色主题曲MV、科普简史、大肥鱼的情书、word excuse me 四个合集。支持五档画质、本地录制、导入自己的 MV、新建合集，播放完自动回到合集。
+> **1.1.0 起只内置默认 MV（P(doom)）**；AI娘角色主题曲MV、科普简史、大肥鱼的情书、word excuse me 四个合集只显示封面，第一次点播时从 Cloudflare R2 下载，之后离线播放。支持五档画质、本地录制、导入自己的 MV、新建合集，播放完自动回到合集。
 
 ![数学简史](web/covers/math.jpg)
 
-**版本：1.0.1** · **许可：[AGPL-3.0](LICENSE)** · 安卓包名 `com.dsha.xmmv`
+**版本：1.1.0** · **许可：[AGPL-3.0](LICENSE)** · 安卓包名 `com.dsha.xmmv`
+
+DSH 插件版（同一套引擎，内置默认 MV + 合集按需下载）：<https://github.com/xunfe/mv-renderer-dsh>
 
 仓库：<https://github.com/xunfe/mv-renderer> · 下载：[Releases](https://github.com/xunfe/mv-renderer/releases)
+
+---
+
+## 1.1.0 · 默认 MV + 可选扩展包
+
+安装包不再塞进 300 MB 的作品：只保留默认 P(doom)、首页与字体；四个合集变成「可选扩展」，卡片只显示封面和一个下载按钮，点下去从 Cloudflare R2 取回合集包，解压到本机后直接播放，之后完全离线。
+
+| 合集包 | 内容 | 大小 |
+|---|---|---|
+| `ai.zip` | 世界还在写 / 墨海版 / 我只是翻了个身 / 深海版 / 那年你叫我未来 / 晨光版 | 229 MB |
+| `science.zip` | 数学简史 / 化学简史 / 航天简史 / 地理简史 | 46 MB |
+| `letters.zip` | 一封情书 · DeepSeek | 4 MB |
+| `execute.zip` | world.execute (me) ; 离线版 | 4 MB |
+
+- 下载地址与 sha256 在 `web/home.js` 的 `PKGS` 与 `dist/manifest.json`；R2 桶在亚太地区（APAC）。
+- 安卓/PC 都走本地服务 `/__dl`，原生流式下载 + 校验 + 解压到 `mv/<包名>/`，再按 `/custom/<包名>/` 播放。
+- 扩展包里的绝对路径在打包时重写成 `/custom/<包名>/`，所以同一份 zip 两端通用。
+- 打包脚本：`tools/pack-r2.py`（从 `work107/web` 生成 `dist/*.zip` 与 `manifest.json`）。
 
 ---
 

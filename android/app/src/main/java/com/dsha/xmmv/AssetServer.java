@@ -7,13 +7,18 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URL;
+import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.zip.ZipEntry;
@@ -47,6 +52,7 @@ public class AssetServer {
     private ServerSocket ss;
     private Thread thread;
     private volatile boolean running = true;
+    private final Map<String, Dl> dls = new HashMap<>();
 
     AssetServer(Context ctx) {
         this.ctx = ctx;
@@ -175,6 +181,20 @@ public class AssetServer {
             }
             if (path.equals("/__imports")) {
                 json(out, importsJson());
+                return;
+            }
+            if (path.equals("/__dl") && method.equals("POST")) {
+                startDl(query, out);
+                return;
+            }
+            if (path.equals("/__dl/status")) {
+                json(out, dlStatus(param(query, "id")));
+                return;
+            }
+            if (path.equals("/__dl/cancel") && method.equals("POST")) {
+                Dl d = dls.get(param(query, "id"));
+                if (d != null) d.cancel = true;
+                json(out, "{\"ok\":" + (d != null) + "}");
                 return;
             }
             if (path.equals("/__delete") && method.equals("POST")) {
@@ -341,6 +361,108 @@ public class AssetServer {
         out.write(b);
         out.flush();
         try { out.close(); } catch (IOException ignored) {}
+    }
+
+
+    /* ---------------- 扩展包下载（Cloudflare R2） ---------------- */
+    static class Dl {
+        volatile String state = "idle";
+        volatile long got = 0, total = 0;
+        volatile String error = null;
+        volatile boolean cancel = false;
+    }
+
+    static String hex(byte[] b) {
+        StringBuilder sb = new StringBuilder();
+        for (byte x : b) sb.append(String.format("%02x", x & 0xff));
+        return sb.toString();
+    }
+
+    void startDl(String query, OutputStream out) throws IOException {
+        String pkg = param(query, "pkg");
+        String u = param(query, "u");
+        String sha = param(query, "sha");
+        String size = param(query, "size");
+        if (pkg == null || !pkg.matches("[a-z0-9][a-z0-9._-]{0,40}") || u == null || !(u.startsWith("https://") || u.startsWith("http://"))) {
+            json(out, "{\"ok\":false,\"error\":\"参数不合法\"}");
+            return;
+        }
+        Dl d = new Dl();
+        try { d.total = Long.parseLong(size); } catch (Exception ignored) {}
+        synchronized (dls) { dls.put(pkg, d); }
+        final Dl task = d;
+        new Thread(new Runnable() {
+            public void run() { download(pkg, u, sha, task); }
+        }, "mv-dl-" + pkg).start();
+        json(out, "{\"ok\":true}");
+    }
+
+    void download(String pkg, String url, String sha, Dl d) {
+        File zip = new File(mvRoot(), ".dl-" + pkg + ".zip");
+        File tmp = new File(mvRoot(), ".dl-" + pkg + ".dir");
+        try {
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+            c.setConnectTimeout(20000);
+            c.setReadTimeout(60000);
+            c.setInstanceFollowRedirects(true);
+            c.setRequestProperty("User-Agent", "MV-Renderer/1.1.0");
+            int code = c.getResponseCode();
+            if (code != 200) throw new IOException("HTTP " + code);
+            long len = c.getContentLength();
+            if (len > 0) d.total = len;
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            InputStream in = c.getInputStream();
+            FileOutputStream fo = new FileOutputStream(zip);
+            byte[] buf = new byte[65536];
+            int r;
+            while ((r = in.read(buf)) > 0) {
+                if (d.cancel) throw new IOException("已取消");
+                fo.write(buf, 0, r);
+                md.update(buf, 0, r);
+                d.got += r;
+            }
+            fo.close(); in.close();
+            if (sha != null && sha.length() > 0 && !hex(md.digest()).equalsIgnoreCase(sha)) {
+                throw new IOException("校验失败（sha256 不一致）");
+            }
+            d.state = "unzipping";
+            deleteTree(tmp);
+            tmp.mkdirs();
+            ZipInputStream zis = new ZipInputStream(new FileInputStream(zip));
+            ZipEntry e;
+            int guard = 0;
+            while ((e = zis.getNextEntry()) != null && guard++ < 30000) {
+                String n = e.getName();
+                if (n.endsWith("/")) continue;
+                File f = new File(tmp, n);
+                if (!f.getCanonicalPath().startsWith(tmp.getCanonicalPath() + File.separator)) continue;
+                File parent = f.getParentFile();
+                if (parent != null) parent.mkdirs();
+                OutputStream os = new FileOutputStream(f);
+                byte[] b = new byte[65536];
+                int n2;
+                while ((n2 = zis.read(b)) > 0) os.write(b, 0, n2);
+                os.close();
+            }
+            zis.close();
+            deleteTree(new File(mvRoot(), pkg));
+            if (!tmp.renameTo(new File(mvRoot(), pkg))) throw new IOException("解压后落盘失败");
+            d.state = "done";
+            d.got = d.total;
+        } catch (Exception ex) {
+            d.state = d.cancel ? "canceled" : "error";
+            d.error = ex.getMessage() == null ? ex.toString() : ex.getMessage();
+            deleteTree(tmp);
+        } finally {
+            zip.delete();
+        }
+    }
+
+    String dlStatus(String pkg) {
+        Dl d = pkg == null ? null : dls.get(pkg);
+        if (d == null) return "{\"state\":\"idle\",\"got\":0,\"total\":0,\"error\":null}";
+        String err = d.error == null ? "null" : "\"" + d.error.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        return "{\"state\":\"" + d.state + "\",\"got\":" + d.got + ",\"total\":" + d.total + ",\"error\":" + err + "}";
     }
 
     String importsJson() {

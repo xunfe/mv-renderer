@@ -15,6 +15,7 @@ const http = require('http');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
+const dl = require('./mv-dl.cjs');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -203,6 +204,7 @@ function startServer({ root, userData, downloads }) {
     try {
       const u = new URL(req.url, 'http://127.0.0.1');
       let p = decodeURIComponent(u.pathname);
+      if (await dl.handle(req, res, u, { mvRoot })) return;
 
       if (p === '/__events') {
         res.writeHead(200, {

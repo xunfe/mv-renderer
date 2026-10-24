@@ -5,7 +5,7 @@
 <title>MV渲染器 · 合集</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="color-scheme" content="dark light" />
-<meta name="description" content="MV渲染器 1.0.1：按合集整理代码音乐视频。默认 P(doom)，合集有 AI娘主题曲MV、科普简史、大肥鱼的情书、word excuse me，也支持导入自己的 MV 和新建合集。" />
+<meta name="description" content="MV渲染器 1.1.0：按合集整理代码音乐视频。默认内置 P(doom)，其余合集只显示封面、按需从 Cloudflare R2 下载（AI娘角色主题曲MV、科普简史、大肥鱼的情书、word excuse me），也支持导入自己的 MV 和新建合集。" />
 <script>
   try { if (localStorage.getItem('mv-theme') === 'light') document.documentElement.setAttribute('data-theme', 'light'); } catch (e) {}
 </script>
@@ -110,6 +110,14 @@
   .brand-name { font-family: var(--serif); font-size: 15px; letter-spacing: .16em; white-space: nowrap; }
   .brand-ver { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 2px 7px; }
   .top-right { display: flex; align-items: center; gap: 9px; flex: none; }
+.dynchip { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px;
+  border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--dim);
+  font: 11px/1 var(--mono); letter-spacing: .06em; cursor: pointer; transition: border-color .2s, color .2s; white-space: nowrap; }
+.dynchip:hover { border-color: var(--acc); }
+.dynchip i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #46d17f;
+  box-shadow: 0 0 8px rgba(70, 209, 127, .85); transition: background .2s, box-shadow .2s; }
+.dynchip[aria-checked="false"] { color: #ff9b8f; border-color: rgba(255, 77, 77, .38); }
+.dynchip[aria-checked="false"] i { background: #ff4d4d; box-shadow: 0 0 8px rgba(255, 77, 77, .85); }
   .live {
     display: inline-flex; align-items: center; gap: 7px; font-size: 10.5px; letter-spacing: .1em; color: var(--muted);
     border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; white-space: nowrap;
@@ -465,6 +473,34 @@
     *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
     .col-card:hover, .mv-card:hover, .col-new:hover { transform: none; }
   }
+
+  /* ---------- 1.1.0 下载 ---------- */
+  .mv-card.locked .thumb img { filter: saturate(.7) brightness(.72); }
+  .mv-card.locked .play { display: none; }
+  .mv-card.locked { cursor: pointer; }
+  .dl-flag {
+    position: absolute; left: 10px; right: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 7px;
+    padding: 7px 10px; border-radius: 999px; background: rgba(8, 9, 11, .78); border: 1px solid rgba(255, 255, 255, .16);
+    color: #f4ede2; font: 500 11px/1.2 var(--sans); letter-spacing: .04em; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
+  .dl-flag svg { width: 15px; height: 15px; flex: none; color: var(--acc2); }
+  .pkg-bar {
+    display: flex; align-items: center; gap: 14px; margin: 18px 0 6px; padding: 14px 16px; border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--acc) 26%, var(--line)); background: color-mix(in srgb, var(--acc-soft) 55%, var(--card));
+  }
+  .pkg-bar.done { border-color: var(--line2); background: var(--card2); }
+  .pkg-ico { width: 38px; height: 38px; flex: none; display: grid; place-items: center; border-radius: 12px; background: var(--bg-soft); border: 1px solid var(--line); color: var(--acc); }
+  .pkg-ico svg { width: 20px; height: 20px; }
+  .pkg-bar.done .pkg-ico { color: #46d17f; }
+  .pkg-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .pkg-copy b { font-size: 14px; letter-spacing: .02em; }
+  .pkg-copy small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .pkg-act { flex: none; }
+  .dl-box { margin: 16px 0 6px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--card2); }
+  .dl-line { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--muted); }
+  .dl-track { height: 6px; margin: 10px 0 9px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  .dl-track i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--acc), var(--acc2)); transition: width .25s ease; }
+  .dl-note { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -480,9 +516,13 @@
       </svg>
     </span>
     <span class="brand-name">MV渲染器</span>
-    <span class="brand-ver">v1.0.1</span>
+    <span class="brand-ver">v1.1.0</span>
   </a>
   <div class="top-right">
+    <button class="dynchip" id="dynres" type="button" role="switch" aria-checked="true"
+            aria-label="自适应分辨率" title="自适应分辨率：开">
+      <i></i><span>自适应分辨率</span>
+    </button>
     <span class="live" id="live"><i></i><span id="liveText">本地服务</span></span>
     <button class="iconbtn" id="theme" type="button" aria-label="切换主题">☀</button>
   </div>
@@ -493,11 +533,11 @@
   <section class="hero">
     <div class="eyebrow"><span class="bar"></span><span>Code Music Video</span><span>·</span><span>Collections / 2026</span></div>
     <h1>MV<span class="accent">渲染器</span></h1>
-    <p class="lede">默认先看 P(doom)；其余作品按合集收好：AI 娘主题曲、科普简史、大肥鱼的情书、word excuse me。点开合集，再选一支开渲染。也能导入自己的 MV、新建合集。</p>
+    <p class="lede">默认先看 P(doom)；其余作品按合集收好：AI 娘主题曲（六支）、科普简史、大肥鱼的情书、word excuse me。点开合集，再选一支开渲染。也能导入自己的 MV、新建合集。</p>
     <div class="stats">
       <div><b id="statWorks">07</b><span>部作品</span></div>
       <div><b id="statCols">04</b><span>个合集</span></div>
-      <div><b>05</b><span>档画质</span></div>
+      <div><b>07</b><span>档画质</span></div>
       <div><b>100%</b><span>离线播放</span></div>
     </div>
   </section>
@@ -534,20 +574,9 @@
     </div>
   </section>
 
-  <section class="section">
-    <div class="section-head"><h2>设置</h2><p>只管流畅度，不改内容</p></div>
-    <div class="opt">
-      <div class="opt-main">
-        <b>动态分辨率</b>
-        <small>开（默认）：4K / 1080P 跑不满帧时，自动降低内部渲染倍率再放大回画布，优先保证流畅；关：严格按所选分辨率渲染。</small>
-      </div>
-      <button class="toggle" id="dynres" type="button" role="switch" aria-checked="true" aria-label="动态分辨率"></button>
-    </div>
-  </section>
-
   <footer>
-    <p>本应用为个人学习、非商业用途。四部曲（数学简史 / 化学简史 / 航天简史 / 地理简史）的音乐、影像与原始创意版权归原作者 <a href="https://space.bilibili.com/7210010" data-external rel="noopener">B站 球球求真（UID：7210010）</a> 所有；离线版 world.execute (me) 的代码由 <a href="https://space.bilibili.com/272722241" data-external rel="noopener">B站 穆阿蒂布（UID：272722241）</a> 制作；内置的 P(doom) 中文本地化基于开源项目 pdoom-video（作者 mexicat）。《一封情书 · DeepSeek》为原创重写作品，创意参考 <a href="https://www.bilibili.com/video/BV1oSny6uEMM" data-external rel="noopener">B站 银铃仙兽大肥鱼</a>，只沿用其 BGM（《开智小曲》，使用已获授权）。《世界还在写》源码由原作者提供并已获授权使用。其余音乐、影像与第三方素材版权归各自权利人所有。</p>
-    <p class="tiny" id="footVer">MV渲染器 · v1.0.1 · 合集 / 本地渲染 / 可录制 / 离线播放</p>
+    <p>本应用为个人学习、非商业用途。四部曲（数学简史 / 化学简史 / 航天简史 / 地理简史）的音乐、影像与原始创意版权归原作者 <a href="https://space.bilibili.com/7210010" data-external rel="noopener">B站 球球求真（UID：7210010）</a> 所有；离线版 world.execute (me) 的代码由 <a href="https://space.bilibili.com/272722241" data-external rel="noopener">B站 穆阿蒂布（UID：272722241）</a> 制作；内置的 P(doom) 中文本地化基于开源项目 pdoom-video（作者 mexicat）。《一封情书 · DeepSeek》为原创重写作品，创意参考 <a href="https://www.bilibili.com/video/BV1oSny6uEMM" data-external rel="noopener">B站 银铃仙兽大肥鱼</a>，只沿用其 BGM（《开智小曲》，使用已获授权）。《世界还在写》《我只是翻了个身》《那年你叫我未来》的源码与角色素材由原作者 小伙伴ko（UID 105330745）提供，已获授权内置使用。其余音乐、影像与第三方素材版权归各自权利人所有。</p>
+    <p class="tiny" id="footVer">MV渲染器 · v1.1.0 · 默认 MV / 合集扩展按需下载 / 离线播放</p>
   </footer>
 </main>
 
