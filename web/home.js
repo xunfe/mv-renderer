@@ -1,4 +1,4 @@
-/* MV渲染器 1.1.0 · 合集首页 / 二级页 / 导入与新建合集
+/* MV渲染器 1.1.1 · 合集首页 / 二级页 / 导入与新建合集
  * 纯前端，状态存 localStorage；导入的 MV 由本地服务放在 /custom/<id>/。
  */
 (function () {
@@ -165,6 +165,18 @@
     if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB';
     if (n >= 1e6) return Math.round(n / 1e6) + ' MB';
     return Math.max(1, Math.round(n / 1e3)) + ' KB';
+  }
+  function fmtSpeed(bps) {
+    if (!bps || !isFinite(bps) || bps < 1) return '—';
+    if (bps >= 1048576) return (bps / 1048576).toFixed(1) + ' MB/s';
+    if (bps >= 1024) return Math.round(bps / 1024) + ' KB/s';
+    return Math.round(bps) + ' B/s';
+  }
+  function fmtEta(sec) {
+    if (!isFinite(sec) || sec <= 0) return '';
+    var s = Math.round(sec);
+    if (s >= 3600) return Math.floor(s / 3600) + ':' + ('0' + Math.floor(s % 3600 / 60)).slice(-2) + ':' + ('0' + s % 60).slice(-2);
+    return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2);
   }
   function checkInstalls() {
     return Promise.all(PKG_ORDER.map(function (p) {
@@ -568,11 +580,12 @@
   }
 
   /* ---------------- 下载（Cloudflare R2） ---------------- */
-  var dlPoll = null, dlPkg = null;
+  var dlPoll = null, dlPkg = null, dlSpeed = 0, dlSample = null;
   function downloadModal(p) {
     var P = PKGS[p];
     if (!P) return;
     dlPkg = p;
+    dlSpeed = 0; dlSample = null;
     openModal(
       '<h3>下载「' + esc(P.title) + '」</h3>' +
       '<p class="hint">默认只内置 P(doom)。这一包 ' + fmtSize(P.bytes) + '，从 Cloudflare R2 直接下载，装好后离线播放，不用再等。</p>' +
@@ -586,6 +599,7 @@
     if (b) b.focus();
   }
   function startDownload(p) {
+    dlSpeed = 0; dlSample = null;
     var P = PKGS[p];
     if (!P) return;
     var q = '/__dl?pkg=' + encodeURIComponent(p) + '&u=' + encodeURIComponent(P.url) + '&sha=' + P.sha256 + '&size=' + P.bytes;
@@ -601,10 +615,21 @@
         .then(function (r) { return r.json(); })
         .then(function (j) {
           var pct = j.total ? Math.min(99, Math.round(j.got / j.total * 100)) : 0;
-          if (j.state === 'downloading') setDl('正在下载 ' + fmtSize(j.got) + ' / ' + fmtSize(j.total), pct);
-          else if (j.state === 'unzipping') setDl('正在解压…', 99);
+          var now = Date.now();
+          if (j.state === 'downloading') {
+            if (dlSample && now > dlSample.t && j.got >= dlSample.got) {
+              var inst = (j.got - dlSample.got) * 1000 / (now - dlSample.t);
+              dlSpeed = dlSpeed > 0 ? dlSpeed * 0.65 + inst * 0.35 : inst;
+            }
+            dlSample = { t: now, got: j.got };
+            var left = (j.total && dlSpeed > 0) ? Math.max(0, (j.total - j.got) / dlSpeed) : 0;
+            setDl('正在下载 · ' + (dlSpeed > 0 ? fmtSpeed(dlSpeed) : '测速中…'), pct,
+              fmtSize(j.got) + ' / ' + fmtSize(j.total),
+              left ? '剩余约 ' + fmtEta(left) + ' · 完成后自动解压到本机' : '完成后自动解压到本机');
+          }
+          else if (j.state === 'unzipping') setDl('正在解压…', 99, fmtSize(j.got) + ' / ' + fmtSize(j.total), '解压完成后自动打开');
           else if (j.state === 'done') {
-            clearInterval(dlPoll); setDl('下载完成，正在打开…', 100);
+            clearInterval(dlPoll); setDl('下载完成，正在打开…', 100, fmtSize(j.total), '已写入本机，可以离线播放');
             INSTALLED[p] = true;
             setTimeout(function () {
               closeModal();
@@ -614,18 +639,20 @@
               var key = Object.keys(PKG_OF).filter(function (k) { return PKG_OF[k] === p; })[0];
               if (key) play(key);
             }, 600);
-          } else if (j.state === 'error') { clearInterval(dlPoll); setDl('下载失败：' + (j.error || '未知错误') + '（可重试）', 0); }
-          else if (j.state === 'canceled') { clearInterval(dlPoll); setDl('已取消', 0); }
+          } else if (j.state === 'error') { clearInterval(dlPoll); setDl('下载失败：' + (j.error || '未知错误') + '（可重试）', 0, '', '检查网络后重试'); }
+          else if (j.state === 'canceled') { clearInterval(dlPoll); setDl('已取消', 0, '', '可以重新开始下载'); }
           else setDl('等待开始…', 0);
         })
         .catch(function () {});
     }, 700);
   }
-  function setDl(text, pct) {
-    var t = $('dlPct'), b = $('dlBar'), n = $('dlNote');
+  function setDl(text, pct, right, note) {
+    var t = $('dlPct'), b = $('dlBar'), s = $('dlSize'), n = $('dlNote');
     if (t) t.textContent = text;
     if (b) b.style.width = pct + '%';
-    if (n && pct >= 99) n.textContent = '正在写入本机，请保持页面在前台。';
+    if (s && right != null) s.textContent = right;
+    if (n && note != null) n.textContent = note;
+    else if (n && pct >= 99) n.textContent = '正在写入本机，请保持页面在前台。';
   }
   function deletePkg(p) {
     var P = PKGS[p];
