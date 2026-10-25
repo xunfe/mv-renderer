@@ -9,7 +9,9 @@
     '1080p30': { ss: 1,     fps: 30, label: '1080P 30' },
     '1080p60': { ss: 1,     fps: 60, label: '1080P 60 · 默认' },
     '2k30':    { ss: 1.5,   fps: 30, label: '2K 30' },
-    '4k60':    { ss: 2,     fps: 60, label: '4K 60' }
+    '4k60':    { ss: 2,     fps: 60, label: '4K 60' },
+    '4k120':   { ss: 2,     fps: 120, label: '4K 120' },
+    '4kmax':   { ss: 2,     fps: 240, label: '4K 不限帧' }   // 240 只是「别卡住」，实际跑多少看屏幕
   };
   var q = new URLSearchParams(location.search);
   var cur = q.get('res');
@@ -20,6 +22,27 @@
   var sel = document.getElementById('q');
   if (!sel) return;
   sel.value = cur;
+  // 「最高多少就标多少」：量一次本机帧率上限，再给 4K 120 / 不限帧补上真实上限
+  (function () {
+    var d = [], last = 0;
+    function paint(cap) {
+      var n = cap > 0 ? cap + 'fps' : '不限';
+      var a = sel.querySelector('option[value="4kmax"]');
+      if (a) a.textContent = '4K 不限帧 · 最高 ' + n;
+      var b = sel.querySelector('option[value="4k120"]');
+      if (b) b.textContent = (cap > 0 && cap < 110) ? '4K 120 · 最高 ' + n : '4K 120';
+    }
+    function tick(ts) {
+      if (last) d.push(ts - last);
+      last = ts;
+      if (d.length < 50) { window.requestAnimationFrame(tick); return; }
+      d.sort(function (x, y) { return x - y; });
+      var med = d[d.length >> 1];
+      paint(med > 0 && med < 200 ? Math.round(1000 / med) : 0);
+    }
+    window.requestAnimationFrame(tick);
+    paint(0);
+  })();
   sel.setAttribute('title', '画质（4K / 2K 很吃性能，录制时再用）');
   sel.addEventListener('change', function () {
     var v = sel.value, m = MAP[v];

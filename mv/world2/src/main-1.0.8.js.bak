@@ -1,0 +1,1531 @@
+// 《世界还在写 · 墨海版》（重做）
+// 一句歌词一个镜头：镜头里的背景、主图形、人物、字，都从这一句的意思来。
+// 节奏：切点落在每一句唱词前面 0.05s；句内用节拍脉冲轻微推镜。
+// 依赖：原版角色贴图 / 字体 / 音轨 / 逐字时间轴（原作者授权内置，不在开源仓）。
+import {
+  W, H, TAU, clamp, lerp, sat, E, rnd, noise, mix, rgba, SERIF, SANS, font,
+  text, measure, karaokeText, rrect, lin, rad, glow, rline, dot, sparkle,
+  vignette, grain, night, sea, hill, shaft, dust, fog, sprite, groundShadow,
+  paperBg, chatWin, bubble, caret, alignChars, makeGrain,
+} from '../../mvkit.js';
+
+const Q = new URLSearchParams(location.search);
+const SS = clamp(Number(Q.get('ss') || 1), 0.5, 2);
+const RENDER = Q.has('render');
+const CLEAN = Q.has('clean');
+const COVER = Q.has('cover');
+const OFF = 14.35;                       // 与原版/旧版一致：从第一句唱词开始
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = Math.round(W * SS); canvas.height = Math.round(H * SS);
+
+const P = {
+  ink: '#050b12', ink2: '#0a1b26', sea: '#0a2634', sea2: '#123a48',
+  paper: '#f2e7d3', paper2: '#e2d0b2', cream: '#fff6e3', gold: '#e8b86a',
+  cyan: '#7fd7e8', coral: '#ff7a4d', teal: '#1d5c66', dim: 'rgba(242,231,211,0.55)',
+};
+
+const grainTex = (() => { const c = document.createElement('canvas'); c.width = 256; c.height = 256; const g = c.getContext('2d'); const im = g.createImageData(256, 256); for (let i = 0; i < 256 * 256; i++) { const v = 128 + (Math.random() - 0.5) * 220; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; } g.putImageData(im, 0, 0); return c; })();
+const bake = (w, h, fn) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); const g = c.getContext('2d'); fn(g); return c; };
+
+/* ---------------- 资源 ---------------- */
+const IMG = {};
+const CHARS = ['o10', 'k07', 'f21', 'f00', 'o20', 'o24', 'k09'];
+let TL = null, LINES = [], BEATS = [];
+window.DUR = 0;
+
+function loadImage(src) {
+  return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error(src)); im.src = src; });
+}
+async function loadFonts() {
+  const list = [['Noto Serif SC', 'NotoSerifSC-VF.ttf'], ['Noto Sans SC', 'NotoSansSC-VF.ttf']];
+  await Promise.all(list.map(async ([fam, file]) => {
+    try {
+      const f = new FontFace(fam, `url(/mv/world/fonts/${file})`, { weight: '100 900' });
+      await f.load(); document.fonts.add(f);
+    } catch (e) { /* 离线/字体缺失时用系统衬线 */ }
+  }));
+}
+async function loadAll() {
+  await loadFonts();
+  await Promise.all(CHARS.map(async k => { try { IMG[k] = await loadImage(`/mv/world/assets/chars/${k}.png`); } catch (e) { } }));
+  TL = await (await fetch('/mv/world/analysis/timeline_full.json')).json();
+  const LY = await (await fetch('/mv/world/analysis/lyrics_full.json')).json();
+  BEATS = TL.beats;
+  window.DUR = TL.duration - OFF;
+  LINES = LY.lines.map((L, i) => {
+    const t1 = i + 1 < LY.lines.length ? LY.lines[i + 1].t[0] : TL.duration;
+    return { id: L.id, text: L.text, t: L.t, s: L.t[0], e: t1 };
+  });
+  buildShots();
+}
+
+/* ---------------- 节拍 ---------------- */
+function beatPulse(T, k = 6) {
+  let lo = 0, hi = BEATS.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (BEATS[m] <= T) lo = m; else hi = m - 1; }
+  return Math.exp(-k * Math.max(0, T - BEATS[lo]));
+}
+
+/* ---------------- 文字 ---------------- */
+function kw(e, str, x, y, size, o = {}) {
+  if (COVER || !str) return;
+  const u = e.u, chars = [...str];
+  const ls = o.ls == null ? size * 0.1 : o.ls;
+  const total = measure(ctx, str, size, o.weight || 600, SERIF, ls);
+  let x0 = x;
+  if (o.align === 'center') x0 = x - total / 2;
+  else if (o.align === 'right') x0 = x - total;
+  const rise = o.rise == null ? 22 : o.rise;
+  ctx.save();
+  ctx.font = font(size, o.weight || 600, SERIF);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  let cx = x0;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    const st = o.stagger == null ? 0.09 : o.stagger;
+    const a = sat(u, (o.delay || 0) + i * st, (o.delay || 0) + i * st + 0.5);
+    const cw = ctx.measureText(ch).width + ls;
+    if (ch !== ' ' && ch !== '\u3000' && a > 0.004) {
+      const dy = (1 - E.out(a)) * rise;
+      ctx.globalAlpha = (o.a == null ? 1 : o.a) * a;
+      if (o.shadow !== false) { ctx.fillStyle = 'rgba(3,8,12,0.55)'; ctx.fillText(ch, cx + 3, y + dy + 5); }
+      if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = 26; }
+      ctx.fillStyle = o.color || P.cream;
+      ctx.fillText(ch, cx, y + dy);
+      ctx.shadowBlur = 0;
+    }
+    cx += cw;
+  }
+  ctx.restore();
+  if (o.line !== false && total > 0) {
+    const lp = E.io(sat(u, (o.delay || 0) + 0.45, (o.delay || 0) + 1.5));
+    ctx.save(); ctx.globalAlpha = (o.a == null ? 1 : o.a) * 0.75;
+    ctx.fillStyle = o.lineColor || P.gold;
+    ctx.fillRect(x - total / 2, y + size * 0.72, total * lp, 1.5);
+    ctx.restore();
+  }
+}
+function small(str, x, y, size = 24, color = P.dim, o = {}) {
+  text(ctx, str, x, y, { size, color, align: o.align || 'center', weight: o.weight || 500, fam: SANS, ls: o.ls == null ? 3 : o.ls, alpha: o.a });
+}
+function drawLyric(T) {
+  let L = null;
+  for (const q of LINES) { if (T >= q.s - 0.12 && T < q.e + 0.5) { L = q; break; } }
+  if (!L) return;
+  const a = sat(T, L.s - 0.12, L.s + 0.1) * (1 - sat(T, L.e - 0.22, L.e));
+  if (a <= 0.003) return;
+  const { chars, times } = alignChars(L.text, L.t);
+  const s = chars.join('');
+  const size = 40;
+  const w = measure(ctx, s, size, 600, SERIF, 1.5);
+  const x = W / 2 - w / 2, y = 1006;
+  ctx.save();
+  ctx.globalAlpha = a * 0.55; ctx.fillStyle = 'rgba(3,9,13,0.42)';
+  rrect(ctx, x - 44, y - 34, w + 88, 68, 34); ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.font = font(size, 600, SERIF);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  let cx = x;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i], t = times[i];
+    const cw = (ctx.measureText(ch).width + 1.5);
+    if (ch !== ' ' && ch !== '\u3000') {
+      const on = t != null && T >= t - 0.05;
+      ctx.globalAlpha = a * (on ? 1 : 0.6);
+      if (on) { ctx.shadowColor = 'rgba(232,184,106,0.75)'; ctx.shadowBlur = 14; ctx.fillStyle = '#ffe2ae'; }
+      else { ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(242,231,211,0.9)'; }
+      ctx.fillText(ch, cx, y);
+      ctx.shadowBlur = 0;
+    }
+    cx += cw;
+  }
+  ctx.restore();
+  const p = sat(T, L.s, L.e);
+  ctx.save(); ctx.globalAlpha = a * 0.5; ctx.fillStyle = P.gold;
+  ctx.fillRect(W / 2 - w / 2, y + 40, w * p, 1.2); ctx.restore();
+}
+
+/* ---------------- 人物 ---------------- */
+function fig(e, key, x, feet, h, o = {}) {
+  const img = IMG[key];
+  if (!img) return;
+  const a = o.a == null ? 1 : o.a;
+  if (a <= 0.003) return;
+  ctx.save(); ctx.globalAlpha = a * 0.5;
+  ctx.fillStyle = rad(ctx, x, feet - h * 0.52, h * 0.62, [[0, rgba(o.rim || P.cyan, 0.28)], [1, rgba(o.rim || P.cyan, 0)]]);
+  ctx.fillRect(x - h, feet - h * 1.4, h * 2, h * 1.6);
+  ctx.restore();
+  if (o.shadow !== false) groundShadow(ctx, x, feet, h * 0.28, 0.28 * a);
+  sprite(ctx, img, x, feet, h, { a, t: e.T, ph: o.ph || 0, bob: o.bob, rot: o.rot, flip: o.flip });
+}
+
+
+/* 亮纸卡片：参考原片的奶油纸 + 橙/蓝大色块 + 半调网点 */
+let DOTPTS = null;
+function paperCard(t, o = {}) {
+  const g = rad(ctx, o.lx || W * 0.45, o.ly || H * 0.35, 1500, [[0, '#fdf6e7'], [0.6, '#f4e8d0'], [1, '#e2d0ac']]);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 橙、蓝两团大色，压得很淡，给画面一点暖冷对比
+  ctx.save(); ctx.globalAlpha = 0.16;
+  ctx.fillStyle = rad(ctx, W * 0.84, H * 0.16, 720, [[0, '#ff8a3c'], [1, 'rgba(255,138,60,0)']]);
+  ctx.fillRect(0, 0, W, H); ctx.restore();
+  ctx.save(); ctx.globalAlpha = 0.13;
+  ctx.fillStyle = rad(ctx, W * 0.12, H * 0.86, 680, [[0, '#3f6fd8'], [1, 'rgba(63,111,216,0)']]);
+  ctx.fillRect(0, 0, W, H); ctx.restore();
+  // 纸纤维
+  ctx.save();
+  for (let i = 0; i < 140; i++) {
+    ctx.globalAlpha = 0.05 + rnd(i, 2) * 0.05;
+    ctx.fillStyle = rnd(i, 3) > 0.5 ? '#8a7156' : '#fffaf0';
+    ctx.fillRect(rnd(i, 4) * W, rnd(i, 5) * H, 1 + rnd(i, 6) * 34, 1);
+  }
+  ctx.restore();
+  // 半调网点
+  if (!DOTPTS) {
+    DOTPTS = [];
+    for (let i = 0; i < 900; i++) DOTPTS.push([rnd(i, 11) * W, rnd(i, 12) * H, 0.6 + rnd(i, 13) * 1.6]);
+  }
+  ctx.save(); ctx.globalAlpha = 0.06; ctx.fillStyle = '#6b5a44';
+  for (const d of DOTPTS) { ctx.beginPath(); ctx.arc(d[0], d[1], d[2], 0, TAU); ctx.fill(); }
+  ctx.restore();
+  // 纸张边缘的暗角
+  ctx.save(); ctx.globalAlpha = 0.18;
+  ctx.fillStyle = rad(ctx, W / 2, H / 2, H * 0.92, [[0.55, 'rgba(0,0,0,0)'], [1, 'rgba(90,70,45,0.35)']]);
+  ctx.fillRect(0, 0, W, H); ctx.restore();
+  ctx.globalAlpha = 1;
+  if (o.rules) {
+    ctx.save(); ctx.globalAlpha = 0.18; ctx.strokeStyle = '#6a5c48'; ctx.lineWidth = 1;
+    for (let y = o.rules[0]; y < H; y += o.rules[1]) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    ctx.restore();
+  }
+}
+
+/* ================================================================
+ * 分镜
+ * ================================================================ */
+const M = {};
+
+M.ink = (e, R) => {
+  paperCard(e.T, { lx: W * 0.5, ly: H * 0.32 });
+  const u = e.u;
+  // 背后一轮橙色大圆（原片那种色块）
+  ctx.save(); ctx.globalAlpha = 0.9;
+  ctx.fillStyle = rad(ctx, 1150, 420, 520, [[0, '#ff9a54'], [0.72, '#ff7a3a'], [1, 'rgba(255,122,58,0)']]);
+  ctx.beginPath(); ctx.arc(1150, 420, 520, 0, TAU); ctx.fill(); ctx.restore();
+  // 海：整字，白边 + 墨芯，一眼能认出来
+  const p = E.out(sat(u, 0.1, 0.8));
+  ctx.save(); ctx.translate(960, 560); ctx.scale(lerp(0.94, 1, p), lerp(0.94, 1, p));
+  ctx.globalAlpha = p;
+  ctx.font = font(760, 600, SERIF); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#fff8ea'; ctx.lineWidth = 22; ctx.strokeText('海', 0, 0);
+  ctx.fillStyle = '#241d18'; ctx.fillText('海', 0, 0);
+  ctx.restore();
+  // 一支笔搁在右下角（不动它，只做装饰）
+  ctx.save(); ctx.translate(1580, 960); ctx.rotate(-0.42);
+  ctx.fillStyle = '#6b4a2c'; rrect(ctx, -8, -330, 16, 300, 8); ctx.fill();
+  ctx.fillStyle = '#c8a06a'; rrect(ctx, -11, -46, 22, 34, 6); ctx.fill();
+  ctx.fillStyle = '#14100c';
+  ctx.beginPath(); ctx.moveTo(-15, -10); ctx.quadraticCurveTo(-22, 62, 0, 104); ctx.quadraticCurveTo(22, 62, 15, -10); ctx.fill();
+  ctx.restore();
+  // 小印
+  const sp = E.back(sat(u, 1.0, 1.5));
+  if (sp > 0) {
+    ctx.save(); ctx.translate(330, 900); ctx.scale(sp, sp); ctx.rotate(-0.08);
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 6; ctx.strokeRect(-48, -48, 96, 96);
+    ctx.fillStyle = '#c0392b'; ctx.font = font(46, 700, SERIF); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('海', 0, 2); ctx.restore();
+  }
+  dust(ctx, e.T, 16, { a: 0.14, color: '#8a7156' });
+  vignette(ctx, 0.08);
+};
+
+M.strokes = (e, R) => {
+  paperCard(e.T, { lx: W * 0.55, ly: H * 0.3 });
+  const u = e.u;
+  // 左边：小柯站在撕开的纸边上
+  ctx.save(); ctx.translate(430, 980); ctx.rotate(-0.02);
+  ctx.fillStyle = '#efe0c4'; ctx.fillRect(-300, 0, 600, 120);
+  ctx.fillStyle = 'rgba(120,96,64,0.12)'; ctx.fillRect(-300, 0, 600, 12);
+  ctx.restore();
+  groundShadow(ctx, 430, 1000, 220, 0.18);
+  fig(e, 'o10', 430, 990, 640, { a: 1, rim: '#ff8a3c', shadow: false });
+  // 橙色三点水
+  const dots = [
+    { x: 850, y: 300, len: 110, ang: 1.18 },
+    { x: 790, y: 500, len: 120, ang: 1.05 },
+    { x: 735, y: 710, len: 150, ang: 0.88 },
+  ];
+  dots.forEach((d, i) => {
+    const grow = E.io(sat(u, 0.15 + i * 0.3, 0.8 + i * 0.3));
+    if (grow <= 0) return;
+    const ex = d.x + Math.cos(d.ang) * d.len * grow;
+    const ey = d.y + Math.sin(d.ang) * d.len * grow;
+    ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = '#f26a2e';
+    ctx.lineWidth = 34 - i * 3;
+    ctx.beginPath(); ctx.moveTo(d.x, d.y);
+    ctx.quadraticCurveTo(d.x - 20, d.y + d.len * 0.45 * grow, ex, ey);
+    ctx.stroke(); ctx.restore();
+  });
+  // 右边：墨色「每」，毛笔一路写出来
+  const q = sat(u, 0.9, 3.1);
+  if (q > 0) {
+    const cx = 1290, cy = 540;
+    const a = -0.55, nx = Math.cos(a + Math.PI / 2), ny = Math.sin(a + Math.PI / 2);
+    const half = 470, thr = lerp(-200, 280, q);
+    const edge = [];
+    for (let t = -half; t <= half; t += 26) {
+      const j = (rnd(t, 3) - 0.5) * 14;
+      edge.push([cx + Math.cos(a) * t + nx * (thr + j), cy + Math.sin(a) * t + ny * (thr + j)]);
+    }
+    ctx.save();
+    ctx.beginPath();
+    edge.forEach((p2, i) => i ? ctx.lineTo(p2[0], p2[1]) : ctx.moveTo(p2[0], p2[1]));
+    const far = 1100;
+    ctx.lineTo(edge[edge.length - 1][0] - nx * far, edge[edge.length - 1][1] - ny * far);
+    ctx.lineTo(edge[0][0] - nx * far, edge[0][1] - ny * far);
+    ctx.closePath(); ctx.clip();
+    ctx.font = font(470, 600, SERIF); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#241d18'; ctx.fillText('每', cx, cy);
+    ctx.restore();
+    const bp = [cx + nx * thr, cy + ny * thr];
+    ctx.save(); ctx.translate(bp[0], bp[1]); ctx.rotate(a + Math.PI / 2);
+    ctx.fillStyle = '#6b4a2c'; rrect(ctx, -7, -190, 14, 172, 7); ctx.fill();
+    ctx.fillStyle = '#c8a06a'; rrect(ctx, -10, -28, 20, 26, 5); ctx.fill();
+    ctx.fillStyle = '#14100c';
+    ctx.beginPath(); ctx.moveTo(-14, -4); ctx.quadraticCurveTo(-20, 52, 0, 92); ctx.quadraticCurveTo(20, 52, 14, -4); ctx.fill();
+    ctx.restore();
+  }
+  // 标注：三点水 + 每
+  small('三点水', 800, 900, 30, 'rgba(242,106,46,0.95)', { ls: 6 });
+  small('＋', 1000, 900, 30, 'rgba(90,70,45,0.6)');
+  small('每', 1170, 900, 30, 'rgba(58,46,36,0.8)');
+  dust(ctx, e.T, 20, { a: 0.18, color: '#8a7156' });
+  vignette(ctx, 0.1);
+};
+
+/* 折线路径上的点与切线 */
+function pathAt(pts, f) {
+  if (f <= 0) return pts[0];
+  if (f >= 1) return pts[pts.length - 1];
+  let total = 0;
+  const seg = [];
+  for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(d); total += d; }
+  let target = total * f, acc = 0;
+  for (let i = 1; i < pts.length; i++) {
+    if (acc + seg[i - 1] < target) { acc += seg[i - 1]; continue; }
+    const k = (target - acc) / (seg[i - 1] || 1);
+    return [lerp(pts[i - 1][0], pts[i][0], k), lerp(pts[i - 1][1], pts[i][1], k)];
+  }
+  return pts[pts.length - 1];
+}
+function pathAngle(pts, f) {
+  const a = pathAt(pts, Math.max(0, f - 0.02)), b = pathAt(pts, Math.min(1, f + 0.02));
+  return Math.atan2(b[1] - a[1], b[0] - a[0]);
+}
+
+function makeGlyphGrid(ch, cols, rows, size, color) {
+  return bake(cols * size * 1.25, rows * size * 1.25, g => {
+    g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = font(size, 600, SERIF);
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      g.globalAlpha = 0.35 + rnd(y * cols + x, 7) * 0.6;
+      g.fillText(ch, x * size * 1.25 + size * 0.62, y * size * 1.25 + size * 0.62);
+    }
+  });
+}
+let GRID = null;
+M.thousand = (e, R) => {
+  night(ctx, e.T, { top: '#04101a', bot: '#0a2431', stars: 60, starA: 0.5 });
+  if (!GRID) GRID = makeGlyphGrid('海', 22, 11, 72, 'rgba(150,214,226,0.55)');
+  const u = e.u;
+  const ox = -((u * 26) % Math.max(1, GRID.width - W)) + 40;
+  ctx.save(); ctx.globalAlpha = 0.28; ctx.drawImage(GRID, ox, -60); ctx.restore();
+  // 上暗下亮，让字压得住
+  ctx.fillStyle = lin(ctx, 0, 0, 0, H, [[0, 'rgba(3,10,15,0.85)'], [0.45, 'rgba(3,10,15,0.2)'], [1, 'rgba(3,10,15,0.55)']]);
+  ctx.fillRect(0, 0, W, H);
+  const hx = 1420, hy = 620;
+  glow(ctx, hx, hy, 180, P.gold, 0.5 + 0.18 * Math.sin(u * 2));
+  ctx.save(); ctx.globalAlpha = 0.95; ctx.font = font(74, 600, SERIF); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = P.gold; ctx.fillText('海', hx, hy); ctx.restore();
+  // 人海：一浪一浪在人头上
+  ctx.save(); ctx.globalAlpha = 0.5;
+  for (let i = 0; i < 30; i++) {
+    const x = 40 + i * 64, h = 80 + rnd(i, 8) * 70;
+    ctx.fillStyle = '#020a10';
+    ctx.beginPath(); ctx.ellipse(x, 1032, 24, h * 0.5, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, 1032 - h * 0.62, 18, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+  sea(ctx, e.T, { hz: 900, amp: 0.5, g0: 'rgba(9,32,42,0.9)' });
+  kw(e, R.kw, 640, 250, 150, { align: 'center', delay: 0.15, glow: 'rgba(232,184,106,0.35)' });
+  small('一万个人写过的「海」', 640, 340, 20, 'rgba(242,231,211,0.6)', { ls: 4 });
+  vignette(ctx, 0.5);
+};
+
+M.shore = (e, R) => {
+  night(ctx, e.T, { top: '#071420', bot: '#173845', moon: [1500, 210, 76], stars: 70, starA: 0.7 });
+  sea(ctx, e.T, { hz: 690, amp: 0.7, reflect: [1500, 0.55], g0: 'rgba(18,52,64,0.95)', moonCol: '#ffe9b8' });
+  ctx.fillStyle = lin(ctx, 0, 790, 0, H, [[0, '#3a3026'], [1, '#0d0a08']]);
+  ctx.beginPath(); ctx.moveTo(0, 820);
+  for (let x = 0; x <= W; x += 24) ctx.lineTo(x, 800 + Math.sin(x * 0.003 + 1) * 12);
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+  for (let i = 0; i < 5; i++) {
+    const q = ((e.T * 0.3 + i * 0.2) % 1);
+    const back = 1 - q;
+    ctx.save(); ctx.globalAlpha = 0.26 * back;
+    ctx.strokeStyle = '#bfeaf3'; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 20) ctx.lineTo(x, 780 + 90 * back - Math.sin(x * 0.008 + i) * 10);
+    ctx.stroke(); ctx.restore();
+  }
+  // 一双鞋：前景，月光勾边
+  const sx = 1080, sy = 920;
+  ctx.save(); ctx.translate(sx, sy); ctx.rotate(-0.04); ctx.scale(2.2, 2.2);
+  for (const [dx, rot, flip] of [[-52, -0.12, 1], [52, 0.1, -1]]) {
+    ctx.save(); ctx.translate(dx, 0); ctx.rotate(rot); ctx.scale(flip, 1);
+    // 鞋底
+    ctx.fillStyle = 'rgba(8,12,14,0.98)';
+    ctx.beginPath(); ctx.ellipse(0, 16, 52, 16, 0, 0, TAU); ctx.fill();
+    // 鞋面
+    ctx.fillStyle = '#0e161a';
+    ctx.beginPath(); ctx.moveTo(-46, 10); ctx.quadraticCurveTo(-44, -30, -4, -34);
+    ctx.quadraticCurveTo(34, -36, 48, 6); ctx.quadraticCurveTo(40, 18, 0, 18); ctx.quadraticCurveTo(-30, 18, -46, 10); ctx.fill();
+    // 鞋口
+    ctx.strokeStyle = 'rgba(232,184,106,0.5)'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(-38, -18); ctx.quadraticCurveTo(-6, -26, 26, -16); ctx.stroke();
+    // 月光边
+    ctx.strokeStyle = 'rgba(207,236,242,0.55)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-40, -12); ctx.quadraticCurveTo(-24, -32, 10, -32); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+  groundShadow(ctx, sx, sy + 40, 200, 0.4);
+  fig(e, 'f00', 440, 940, 330, { a: 0.92, rim: '#7fd7e8' });
+  fog(ctx, e.T, { y: 800, a: 0.18, color: '#7fb7c2' });
+  kw(e, R.kw, 1180, 300, 100, { align: 'center', delay: 0.2 });
+  vignette(ctx, 0.5);
+};
+
+M.ink2 = (e, R) => {
+  night(ctx, e.T, { top: '#071018', bot: '#132832', moon: [380, 210, 54], stars: 40, starA: 0.4 });
+  paperCard(e.T, { c1: '#17232a', c2: '#0a1218', lx: 300, ly: 300 });
+  for (let i = 3; i >= 0; i--) {
+    ctx.save(); ctx.translate(1180 + i * 8, 560 + i * 10); ctx.rotate(-0.03 + i * 0.01);
+    ctx.globalAlpha = 0.55 + (3 - i) * 0.1; ctx.fillStyle = i ? '#cfc0a6' : P.paper;
+    rrect(ctx, -330, -400, 660, 800, 10); ctx.fill();
+    ctx.restore();
+  }
+  const p = E.io(sat(e.u, 0.5, 2.6));
+  ctx.save(); ctx.globalAlpha = p * 0.95; ctx.translate(1180, 560);
+  drawBigGlyph(ctx, '你', 0, 0, 420, '#2b2320');
+  ctx.globalAlpha = p * 0.7; ctx.strokeStyle = 'rgba(43,35,32,0.5)'; ctx.lineWidth = 3;
+  for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(-250, 190 + i * 42); ctx.lineTo(250 - rnd(i, 2) * 120, 190 + i * 42); ctx.stroke(); }
+  ctx.restore();
+  fig(e, 'f00', 640, 980, 470, { a: 0.95, flip: true, rim: '#e8b86a' });
+  dust(ctx, e.T, 30, { a: 0.4 });
+  kw(e, R.kw, 520, 250, 88, { align: 'center', delay: 0.2 });
+  vignette(ctx, 0.44);
+};
+
+M.chatFall = (e, R) => {
+  night(ctx, e.T, { top: '#02060c', bot: '#0a1722', stars: 140, starA: 0.8 });
+  sea(ctx, e.T, { hz: 830, amp: 0.5, g0: 'rgba(8,22,30,0.9)' });
+  const u = e.u;
+  for (let i = 0; i < 2; i++) {
+    const q = sat(u, 0.25 + i * 0.6, 2.1 + i * 0.6);
+    if (q <= 0 || q >= 1) continue;
+    const ch = i ? '吗' : '在';
+    const x = 820 + i * 340 + Math.sin(q * 3 + i) * 20;
+    const y = lerp(40, 860, E.in(q));
+    // 长长的光尾
+    ctx.save(); ctx.globalAlpha = 0.4 * (1 - q);
+    const lg = lin(ctx, x, y - 420, x, y, [[0, 'rgba(232,184,106,0)'], [1, 'rgba(232,184,106,0.75)']]);
+    ctx.fillStyle = lg; ctx.fillRect(x - 3, y - 420, 6, 420); ctx.restore();
+    glow(ctx, x, y, 120, P.gold, 0.6);
+    ctx.save(); ctx.globalAlpha = 0.98; ctx.font = font(132, 600, SERIF); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = P.cream; ctx.shadowColor = 'rgba(232,184,106,0.8)'; ctx.shadowBlur = 30;
+    ctx.fillText(ch, x, y); ctx.restore();
+    if (q > 0.72) {
+      const rr = (q - 0.72) * 3.6 * 180;
+      ctx.save(); ctx.globalAlpha = 0.45 * (1 - (q - 0.72) * 3.6);
+      ctx.strokeStyle = P.cyan; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(x, 900, Math.max(1, rr), Math.max(1, rr * 0.2), 0, 0, TAU); ctx.stroke(); ctx.restore();
+    }
+  }
+  // 对话框虚影
+  ctx.save(); ctx.globalAlpha = 0.2;
+  chatWin(ctx, 1440, 280, 520, 220, { bg: 'rgba(10,24,32,0.8)' });
+  bubble(ctx, 1440, 280, 380, 96, '在吗', { bg: 'rgba(232,184,106,0.75)', fg: '#1a1208' });
+  ctx.restore();
+  fig(e, 'f00', 330, 1030, 400, { a: 0.6, rim: '#7fd7e8' });
+  vignette(ctx, 0.5);
+};
+
+M.enter = (e, R) => {
+  night(ctx, e.T, { top: '#04101a', bot: '#0b2028', stars: 20, starA: 0.2 });
+  ctx.fillStyle = lin(ctx, 0, 0, 0, H, [[0, 'rgba(30,90,110,0.45)'], [1, 'rgba(3,8,12,0.95)']]);
+  ctx.fillRect(0, 0, W, H);
+  const u = e.u;
+  ctx.save(); ctx.translate(960, 700); ctx.rotate(-0.05);
+  ctx.fillStyle = 'rgba(16,24,28,0.95)'; rrect(ctx, -520, -250, 1040, 500, 26); ctx.fill();
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 7; c++) {
+    const x = -460 + c * 132, y = -200 + r * 132;
+    ctx.fillStyle = 'rgba(34,44,50,0.9)'; rrect(ctx, x, y, 112, 112, 14); ctx.fill();
+  }
+  const press = Math.exp(-6 * Math.abs(((u * 0.9) % 2.4) - 0.2));
+  ctx.save(); ctx.translate(press * 6, press * 8);
+  glow(ctx, 300, 120, 260, P.gold, 0.35 + press * 0.4);
+  ctx.fillStyle = press > 0.3 ? '#3f3020' : '#2c2118';
+  rrect(ctx, 180, 20, 300, 200, 20); ctx.fill();
+  ctx.strokeStyle = rgba(P.gold, 0.7); ctx.lineWidth = 2; ctx.stroke();
+  ctx.strokeStyle = P.cream; ctx.lineWidth = 10; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(410, 150); ctx.lineTo(260, 150); ctx.lineTo(310, 100); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(260, 150); ctx.lineTo(310, 200); ctx.stroke();
+  ctx.restore();
+  ctx.restore();
+  for (let i = 0; i < 3; i++) {
+    const q = ((u * 0.6 + i / 3) % 1);
+    ctx.save(); ctx.globalAlpha = 0.4 * (1 - q); ctx.strokeStyle = P.cyan; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(1260, 820, 120 + q * 700, 30 + q * 200, 0, 0, TAU); ctx.stroke(); ctx.restore();
+  }
+  kw(e, R.kw, W / 2, 240, 110, { align: 'center', delay: 0.15 });
+  vignette(ctx, 0.5);
+};
+
+M.firstPage = (e, R) => {
+  paperCard(e.T, { c1: '#efe2c8', c2: '#c9b492', lx: 700, ly: 260 });
+  const p = E.io(sat(e.u, 0.1, 2.2));
+  ctx.save(); ctx.translate(W / 2, 620); ctx.rotate(lerp(-0.05, 0, p));
+  ctx.shadowColor = 'rgba(40,30,20,0.35)'; ctx.shadowBlur = 50; ctx.shadowOffsetY = 24;
+  ctx.fillStyle = P.paper; ctx.beginPath();
+  ctx.moveTo(-720, -300); ctx.quadraticCurveTo(0, -340, 720, -300);
+  ctx.lineTo(760, 340); ctx.quadraticCurveTo(0, 380, -760, 340); ctx.closePath(); ctx.fill();
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = 'rgba(90,74,52,0.18)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, -320); ctx.lineTo(0, 360); ctx.stroke();
+  ctx.globalAlpha = 0.8 * p;
+  drawBigGlyph(ctx, '第一页', -390, 40, 130, '#2b2320');
+  ctx.globalAlpha = 0.5 * p;
+  ctx.strokeStyle = 'rgba(43,35,32,0.4)'; ctx.lineWidth = 2;
+  for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(-640, 210 + i * 44); ctx.lineTo(-200 - rnd(i, 6) * 100, 210 + i * 44); ctx.stroke(); }
+  ctx.globalAlpha = 0.5 * p;
+  ctx.strokeStyle = 'rgba(43,35,32,0.35)'; ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-640, -40 + i * 62); ctx.lineTo(-160 - rnd(i, 3) * 120, -40 + i * 62); ctx.stroke(); }
+  ctx.restore();
+  const fl = sat(e.u, 0.2, 1.6);
+  if (fl < 1) {
+    ctx.save(); ctx.translate(W / 2, 620); ctx.rotate(-0.05);
+    ctx.globalAlpha = 0.9; ctx.fillStyle = '#f6ecd8';
+    ctx.beginPath(); ctx.moveTo(-720, -300);
+    ctx.quadraticCurveTo(0, -340 - 200 * (1 - fl), lerp(720, -200, fl), -300 + 300 * fl);
+    ctx.lineTo(lerp(760, -260, fl), 340 - 300 * fl);
+    ctx.quadraticCurveTo(0, 380, -760, 340); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  fig(e, 'f00', 1500, 1010, 460, { a: 0.95, rim: '#e8b86a' });
+  ctx.save(); ctx.globalAlpha = 0.4;
+  ctx.fillStyle = rad(ctx, 1500, 500, 500, [[0, 'rgba(255,214,150,0.35)'], [1, 'rgba(255,214,150,0)']]);
+  ctx.fillRect(1000, 0, 1000, 1080); ctx.restore();
+  kw(e, R.kw, 480, 180, 70, { align: 'center', delay: 0.15, color: '#3a2e24', shadow: false, lineColor: '#a8834a' });
+  vignette(ctx, 0.22);
+};
+
+M.pageRain = (e, R) => {
+  night(ctx, e.T, { top: '#04101a', bot: '#12303c', stars: 60, starA: 0.5 });
+  // 天光
+  const g0 = rad(ctx, 960, 200, 900, [[0, 'rgba(232,184,106,0.22)'], [1, 'rgba(232,184,106,0)']]);
+  ctx.fillStyle = g0; ctx.fillRect(0, 0, W, H);
+  sea(ctx, e.T, { hz: 780, amp: 0.6, g0: 'rgba(14,44,56,0.9)' });
+  for (let i = 0; i < 18; i++) {
+    const q = ((e.T * (0.16 + rnd(i, 2) * 0.1) + rnd(i, 3)) % 1);
+    const x = rnd(i, 4) * W + Math.sin(e.T + i) * 40;
+    const y = lerp(-300, 900, q);
+    const rot = Math.sin(e.T * 0.6 + i) * 0.6;
+    const sc = 0.7 + rnd(i, 11) * 0.6;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sc, sc);
+    ctx.globalAlpha = 0.95 * (1 - q * 0.75);
+    ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 10;
+    ctx.fillStyle = rnd(i, 5) > 0.5 ? '#f4e8d0' : '#e8d8b8';
+    rrect(ctx, -60, -80, 120, 160, 4); ctx.fill();
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    // 纸上的字迹
+    ctx.globalAlpha *= 0.55; ctx.fillStyle = 'rgba(60,48,34,0.75)';
+    ctx.font = font(13, 500, SERIF); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    for (let k = 0; k < 7; k++) ctx.fillText('昨天写下的字', -44, -58 + k * 19);
+    ctx.restore();
+    if (q > 0.88) {
+      ctx.save(); ctx.globalAlpha = 0.3 * (1 - (q - 0.88) * 8);
+      ctx.strokeStyle = P.cyan; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.ellipse(x, 930, 90, 14, 0, 0, TAU); ctx.stroke(); ctx.restore();
+    }
+  }
+  fog(ctx, e.T, { y: 860, a: 0.2, color: '#6aa3b0' });
+  kw(e, R.kw, W / 2, 260, 130, { align: 'center', delay: 0.2 });
+  vignette(ctx, 0.5);
+};
+
+M.yesterday = (e, R) => {
+  night(ctx, e.T, { top: '#050b12', bot: '#0d1c26', stars: 40, starA: 0.35 });
+  const u = e.u;
+  const cards = [
+    { x: 480, ch: '山', draw: g => {
+      g.fillStyle = 'rgba(120,170,190,0.35)';
+      g.beginPath(); g.moveTo(-150, 110); g.lineTo(-40, -100); g.lineTo(30, 20); g.lineTo(90, -70); g.lineTo(170, 110); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(210,235,242,0.75)';
+      g.beginPath(); g.moveTo(-40, -100); g.lineTo(-10, -30); g.lineTo(-70, -30); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(230,245,250,0.7)'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(-150, 110); g.quadraticCurveTo(-40, 60, 170, 110); g.stroke();
+      g.fillStyle = 'rgba(255,250,235,0.85)'; g.beginPath(); g.arc(110, -80, 20, 0, TAU); g.fill();
+    } },
+    { x: 960, ch: '火', draw: g => {
+      glow(g, 0, 20, 140, '#ff9a5a', 0.55);
+      g.fillStyle = '#ffb27a';
+      g.beginPath(); g.moveTo(0, 116);
+      g.bezierCurveTo(-96, 60, -70, -10, -22, -96);
+      g.bezierCurveTo(-14, -30, 18, -20, 40, -60);
+      g.bezierCurveTo(90, 30, 40, 110, 0, 116); g.fill();
+      g.fillStyle = '#ffe6b0';
+      g.beginPath(); g.moveTo(6, 100);
+      g.bezierCurveTo(-40, 60, -26, 10, 4, -40);
+      g.bezierCurveTo(16, 10, 46, 40, 30, 84); g.fill();
+      for (let k = 0; k < 8; k++) dot(g, (rnd(k, 12) - 0.5) * 160, -60 - rnd(k, 13) * 120, 1.5, '#ffd9a0', 0.5);
+    } },
+    { x: 1440, ch: '难过', draw: g => {
+      g.strokeStyle = 'rgba(150,185,255,0.85)'; g.lineWidth = 2.4;
+      for (let i = 0; i < 5; i++) {
+        g.beginPath();
+        for (let k = 0; k <= 18; k++) {
+          const x = -150 + k * 18, y = -90 + i * 42 + Math.sin(k * 1.4 + i * 2) * 12;
+          k ? g.lineTo(x, y) : g.moveTo(x, y);
+        }
+        g.stroke();
+      }
+      g.fillStyle = 'rgba(150,185,255,0.7)';
+      g.beginPath(); g.moveTo(110, -20); g.quadraticCurveTo(126, 20, 110, 34); g.quadraticCurveTo(94, 20, 110, -20); g.fill();
+    } },
+  ];
+  cards.forEach((c, i) => {
+    const p = E.out(sat(u, 0.15 + i * 0.25, 1.1 + i * 0.25));
+    ctx.save(); ctx.translate(c.x, 560 + Math.sin(u * 0.8 + i) * 10); ctx.rotate((i - 1) * 0.03);
+    ctx.globalAlpha = p * 0.96;
+    ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 18;
+    ctx.fillStyle = P.paper; rrect(ctx, -170, -240, 340, 480, 8); ctx.fill();
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    ctx.save(); ctx.translate(0, -40); c.draw(ctx); ctx.restore();
+    ctx.globalAlpha = p * 0.85; ctx.fillStyle = '#2b2320'; ctx.font = font(46, 600, SERIF); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(c.ch, 0, 150);
+    ctx.restore();
+  });
+  dust(ctx, e.T, 34, { a: 0.3 });
+  kw(e, R.kw, W / 2, 200, 84, { align: 'center', delay: 0.2, line: false });
+  vignette(ctx, 0.48);
+};
+
+M.blankPages = (e, R) => {
+  paperCard(e.T, { c1: '#e9ddc6', c2: '#b7a284', lx: 900, ly: 300 });
+  const u = e.u;
+  // 暖光：桌上一盏灯
+  const lg = rad(ctx, 1560, 240, 700, [[0, 'rgba(255,206,140,0.5)'], [1, 'rgba(255,206,140,0)']]);
+  ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
+  for (let i = 5; i >= 0; i--) {
+    const p = E.out(sat(u, 0.05 + i * 0.12, 0.9 + i * 0.12));
+    ctx.save(); ctx.translate(900 + (i - 3) * 34, 580 + (i - 3) * 20); ctx.rotate((i - 3) * 0.02);
+    ctx.globalAlpha = 0.94 * p;
+    ctx.shadowColor = 'rgba(60,44,28,0.28)'; ctx.shadowBlur = 30; ctx.shadowOffsetY = 12;
+    ctx.fillStyle = i % 2 ? '#f3e8d2' : '#eee1c7';
+    rrect(ctx, -430, -300, 860, 600, 6); ctx.fill();
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    ctx.strokeStyle = 'rgba(120,100,70,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+  }
+  // 最上面：一条空线和一粒墨点
+  ctx.save(); ctx.globalAlpha = 0.5;
+  ctx.strokeStyle = 'rgba(80,64,46,0.32)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(660, 640); ctx.lineTo(1160, 640); ctx.stroke();
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = 0.85; dot(ctx, 1180, 640, 4, '#6b5a44', 0.7); ctx.restore();
+  // 墨水瓶与笔
+  ctx.save(); ctx.translate(340, 900);
+  ctx.fillStyle = 'rgba(20,26,30,0.9)'; rrect(ctx, -60, -40, 120, 80, 14); ctx.fill();
+  ctx.fillStyle = 'rgba(30,60,70,0.9)'; rrect(ctx, -48, -26, 96, 52, 10); ctx.fill();
+  ctx.fillStyle = '#6b4a2c'; rrect(ctx, -8, -150, 16, 120, 6); ctx.fill();
+  ctx.restore();
+  // 蜡烛
+  ctx.save(); ctx.translate(1600, 860);
+  ctx.fillStyle = '#efe0c2'; rrect(ctx, -22, -110, 44, 110, 6); ctx.fill();
+  glow(ctx, 0, -128, 120, '#ffca7a', 0.8);
+  ctx.fillStyle = '#ffd99a'; ctx.beginPath(); ctx.ellipse(0, -128 + Math.sin(u * 6) * 3, 9, 18, 0, 0, TAU); ctx.fill();
+  ctx.restore();
+  fig(e, 'f00', 1440, 1030, 400, { a: 0.92, rim: '#c9a86a' });
+  kw(e, R.kw, 780, 200, 92, { align: 'center', delay: 0.25, color: '#3a2e24', shadow: false, lineColor: '#a8834a' });
+  vignette(ctx, 0.22);
+};
+
+M.closeBook = (e, R) => {
+  const u = e.u;
+  paperCard(e.T, { c1: '#e9dcc2', c2: '#bda987', lx: 500, ly: 280 });
+  const p = E.io(sat(u, 0.7, 2.6));
+  const gx = 1450;
+  ctx.save(); ctx.globalAlpha = 0.85 * p;
+  ctx.fillStyle = lin(ctx, gx - 200, 0, gx + 200, 0, [[0, 'rgba(255,226,174,0)'], [0.5, 'rgba(255,232,188,0.9)'], [1, 'rgba(255,226,174,0)']]);
+  ctx.fillRect(gx - 260, 100, 520, 900);
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = 0.5 + 0.5 * p;
+  ctx.fillStyle = '#241c15'; rrect(ctx, gx - 118, 200, 236, 760, 6); ctx.fill();
+  ctx.fillStyle = lin(ctx, 0, 210, 0, 950, [[0, '#fff2d6'], [1, '#ffbe72']]);
+  rrect(ctx, gx - 106, 212, 212, 736, 3); ctx.fill();
+  ctx.globalAlpha = 0.5 * p; ctx.fillStyle = '#3a2e24';
+  ctx.beginPath(); ctx.ellipse(gx + 10, 900, 40, 120, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(gx + 10, 760, 30, 0, TAU); ctx.fill();
+  ctx.restore();
+  // 一本合上的书（透视：页块 + 封面 + 书脊）
+  const a = E.io(sat(u, 0.05, 1.2));
+  const bx = 650, by = 810;
+  ctx.save(); ctx.translate(bx, by); ctx.rotate(-0.05);
+  ctx.shadowColor = 'rgba(30,18,10,0.45)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 22;
+  // 页块（侧面看得见一层层纸）
+  ctx.fillStyle = '#e6d5b2';
+  ctx.beginPath(); ctx.moveTo(-330, -10); ctx.lineTo(250, -70); ctx.lineTo(290, 40); ctx.lineTo(-290, 96); ctx.closePath(); ctx.fill();
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = 'rgba(120,96,64,0.3)'; ctx.lineWidth = 1.2;
+  for (let i = 1; i < 9; i++) {
+    const k = i / 9;
+    ctx.beginPath(); ctx.moveTo(-330 + k * 580 * 0.02, -10 + k * 80); ctx.lineTo(250 - k * 40, -70 + k * 100); ctx.stroke();
+  }
+  // 封面：从掀开的位置落下来
+  ctx.save(); ctx.rotate(lerp(-0.22, 0, a));
+  ctx.fillStyle = '#2c1510';
+  ctx.beginPath(); ctx.moveTo(-340, -46); ctx.lineTo(240, -112); ctx.lineTo(286, -18); ctx.lineTo(-300, 50); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#7c2a20';
+  ctx.beginPath(); ctx.moveTo(-340, -46); ctx.lineTo(240, -112); ctx.lineTo(244, -96); ctx.lineTo(-336, -30); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(232,184,106,0.85)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-250, -62); ctx.lineTo(-120, -75); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-250, -48); ctx.lineTo(-170, -57); ctx.stroke();
+  ctx.restore();
+  // 书脊
+  ctx.fillStyle = '#5d1f17';
+  ctx.beginPath(); ctx.moveTo(-350, -20); ctx.lineTo(-300, -26); ctx.lineTo(-290, 80); ctx.lineTo(-340, 88); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  groundShadow(ctx, bx, by + 80, 420, 0.22);
+  fig(e, 'f00', 1180, 1010, 430, { a: 0.95, rim: '#ffd9a0' });
+  ctx.save(); ctx.globalAlpha = 0.3 * p;
+  ctx.fillStyle = rad(ctx, gx, 560, 500, [[0, 'rgba(255,226,174,0.55)'], [1, 'rgba(255,226,174,0)']]);
+  ctx.fillRect(gx - 560, 0, 1120, H); ctx.restore();
+  kw(e, R.kw, 760, 250, 96, { align: 'center', delay: 0.1, color: '#3a2e24', shadow: false, lineColor: '#a8834a' });
+  vignette(ctx, 0.2);
+};
+
+M.bigTitle = (e, R) => {
+  const u = e.u;
+  paperCard(e.T, { lx: W / 2, ly: H * 0.42 });
+  // 放射线
+  ctx.save(); ctx.translate(960, 560); ctx.rotate(u * 0.03);
+  for (let i = 0; i < 22; i++) {
+    const a = (i / 22) * TAU;
+    ctx.save(); ctx.rotate(a);
+    ctx.globalAlpha = i % 2 ? 0.07 : 0.05;
+    ctx.fillStyle = i % 3 ? '#ff8a3c' : '#3f6fd8';
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(260, -90); ctx.lineTo(260, 90); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+  // 彩纸
+  for (let i = 0; i < 34; i++) {
+    const q = ((u * 0.06 + rnd(i, 2)) % 1);
+    const x = rnd(i, 3) * W, y = (rnd(i, 4) * H + q * 40) % H;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(u * 0.6 + i);
+    ctx.globalAlpha = 0.55; ctx.fillStyle = ['#ff8a3c', '#3f6fd8', '#2f9e6a', '#f6d05a'][i % 4];
+    ctx.fillRect(-7, -3, 14, 6); ctx.restore();
+  }
+  // 三个人，放大
+  fig(e, 'o10', 740, 1040, 560, { a: 1, rim: '#ff8a3c' });
+  fig(e, 'f00', 1070, 1040, 552, { a: 1, rim: '#3f6fd8', ph: 1.4 });
+  fig(e, 'k07', 1360, 1040, 544, { a: 1, rim: '#2f9e6a', ph: 2.4 });
+  // 标题：橙字、墨影
+  kw(e, R.kw, W / 2, 250, 190, { align: 'center', delay: 0.03, color: '#f26a2e', shadow: true, lineColor: '#241d18', ls: 14 });
+  small('THE WORLD IS STILL WRITING', W / 2, 340, 20, 'rgba(90,70,45,0.5)', { ls: 7 });
+  dust(ctx, e.T, 24, { a: 0.2, color: '#8a7156' });
+  vignette(ctx, 0.16);
+};
+
+M.endlessPages = (e, R) => {
+  const u = e.u;
+  ctx.fillStyle = lin(ctx, 0, 0, 0, H, [[0, '#0a1418'], [1, '#160f0a']]);
+  ctx.fillRect(0, 0, W, H);
+  const hz = 640;
+  ctx.fillStyle = rad(ctx, W / 2, hz, 900, [[0, 'rgba(255,196,120,0.4)'], [1, 'rgba(255,196,120,0)']]);
+  ctx.fillRect(0, 0, W, H);
+  const p = E.io(sat(u, 0.05, 2.6));
+  for (let i = 14; i >= 0; i--) {
+    const k = i / 14;
+    const z = 1 / (1 + k * 7);
+    const y = hz + (H - hz) * z * 1.4 - 20;
+    const w = 1300 * z, h = 520 * z;
+    const x = W / 2 + Math.sin(u * 0.3 + i * 0.4) * 60 * z;
+    ctx.save(); ctx.globalAlpha = (0.9 - k * 0.35) * sat(p, 0.2, 1);
+    ctx.fillStyle = i % 2 ? '#efe2c8' : '#e6d6b8';
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2, y); ctx.lineTo(x + w / 2, y);
+    ctx.lineTo(x + w * 0.42, y - h); ctx.lineTo(x - w * 0.42, y - h); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(90,70,45,0.3)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+  }
+  for (let i = 0; i < 9; i++) {
+    const q = ((u * 0.2 + i * 0.11) % 1);
+    const x = 200 + rnd(i, 2) * 1500, y = lerp(200, 900, q) + Math.sin(u + i) * 20;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(u * 0.7 + i) * 0.3); ctx.globalAlpha = 0.5 * (1 - q);
+    ctx.fillStyle = P.paper; rrect(ctx, -60, -80, 120, 160, 4); ctx.fill(); ctx.restore();
+  }
+  ctx.save(); ctx.fillStyle = lin(ctx, 0, 160, 0, 460, [[0, 'rgba(8,6,4,0)'], [0.5, 'rgba(8,6,4,0.55)'], [1, 'rgba(8,6,4,0)']]);
+  ctx.fillRect(0, 160, W, 300); ctx.restore();
+  kw(e, R.kw, W / 2, 300, 130, { align: 'center', delay: 0.15, glow: 'rgba(255,196,120,0.3)', color: '#fff6e3' });
+  vignette(ctx, 0.3);
+};
+
+M.walkOut = (e, R) => {
+  night(ctx, e.T, { top: '#050d14', bot: '#12303a', stars: 70, starA: 0.5, moon: [320, 200, 50] });
+  sea(ctx, e.T, { hz: 920, amp: 0.35, g0: 'rgba(10,30,38,0.95)' });
+  const n = (R.n || 1);
+  const p = E.io(sat(e.u, 0.1, 2.4));
+  // 一条由纸页铺成的路，越远越亮
+  for (let i = 0; i < 14; i++) {
+    const k = i / 14;
+    const x = 300 + i * 118, y = 850 - i * 22;
+    const on = sat(p, i / 16, i / 16 + 0.35);
+    ctx.save(); ctx.globalAlpha = (0.18 + 0.75 * k) * on;
+    ctx.translate(x, y); ctx.rotate(-0.06 + Math.sin(i) * 0.02);
+    ctx.shadowColor = 'rgba(232,184,106,0.4)'; ctx.shadowBlur = 18;
+    ctx.fillStyle = i % 2 ? '#f3e8d2' : '#e8d8b8';
+    rrect(ctx, -66, -16, 132, 32, 3); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    // 水面倒影
+    ctx.save(); ctx.globalAlpha = 0.1 * k * on; ctx.fillStyle = '#ffe2ae';
+    ctx.fillRect(x - 50, y + 40, 100, 2); ctx.restore();
+  }
+  glow(ctx, 1500, 620, 420, '#ffd9a0', 0.28);
+  const walk = Math.sin(e.T * 1.6) * 10;
+  if (n >= 1) fig(e, 'f00', 700, 820 + walk, 310, { a: 0.95, rim: '#7fd7e8' });
+  if (n >= 2) fig(e, 'o10', 860, 806 + walk, 300, { a: 0.9, rim: '#e8b86a', ph: 1.3 });
+  if (n >= 3) fig(e, 'k07', 1020, 792 + walk, 296, { a: 0.9, rim: '#9fd3dd', ph: 2.2 });
+  fog(ctx, e.T, { y: 860, a: 0.14, color: '#74b3c0' });
+  kw(e, R.kw, W / 2, 220, 100, { align: 'center', delay: 0.15 });
+  vignette(ctx, 0.48);
+};
+
+M.street = (e, R) => {
+  night(ctx, e.T, { top: '#040a10', bot: '#0e222c', stars: 50, starA: 0.4 });
+  const u = e.u;
+  for (let layer = 2; layer >= 0; layer--) {
+    ctx.save(); ctx.globalAlpha = 0.5 + layer * 0.16;
+    ctx.fillStyle = ['#12303a', '#0c222b', '#071319'][layer];
+    for (let i = 0; i < 9; i++) {
+      const w = 180 + rnd(i + layer * 9, 3) * 160;
+      const h = 260 + rnd(i + layer * 9, 4) * 460 - layer * 60;
+      const x = -60 + i * 240 - layer * 50;
+      ctx.fillRect(x, 760 - h, w, h + 200);
+      ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = 'rgba(232,184,106,0.16)';
+      ctx.fillRect(x + w * 0.2, 780 - h, w * 0.6, 50); ctx.restore();
+      for (let k = 0; k < 6; k++) {
+        if (rnd(i * 7 + k + layer * 3, 11) < 0.45) continue;
+        ctx.save(); ctx.globalAlpha = 0.35 + rnd(i * 7 + k, 12) * 0.45;
+        ctx.fillStyle = i % 3 ? '#ffd9a0' : '#9fe0ef';
+        ctx.fillRect(x + 18 + (k % 3) * 46, 800 - h + Math.floor(k / 3) * 54, 16, 24); ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+  ctx.fillStyle = lin(ctx, 0, 760, 0, H, [[0, 'rgba(30,70,84,0.55)'], [1, '#030a0e']]);
+  ctx.fillRect(0, 760, W, H - 760);
+  for (let i = 0; i < 14; i++) {
+    ctx.save(); ctx.globalAlpha = 0.16 + rnd(i, 7) * 0.2;
+    ctx.fillStyle = i % 3 ? P.gold : P.cyan;
+    ctx.fillRect(80 + i * 130 + Math.sin(u + i) * 6, 820 + rnd(i, 8) * 160, 3 + rnd(i, 9) * 6, 40 + rnd(i, 10) * 90);
+    ctx.restore();
+  }
+  for (let i = 0; i < 5; i++) {
+    const on = sat(u, 0.4 + i * 0.35, 0.7 + i * 0.35);
+    const x = 260 + i * 320, y = 700;
+    ctx.save(); ctx.globalAlpha = 0.5; ctx.strokeStyle = '#0a1a20'; ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.moveTo(x, 900); ctx.lineTo(x, y); ctx.lineTo(x + 40, y + 10); ctx.stroke(); ctx.restore();
+    glow(ctx, x + 44, y + 12, 130, '#ffd9a0', 0.5 * on);
+    dot(ctx, x + 44, y + 12, 7, '#ffe1ae', on);
+  }
+  fig(e, 'f00', 700 + Math.sin(e.T * 1.5) * 30, 980, 390, { a: 0.95, rim: '#ffd9a0' });
+  if (R.n >= 2) fig(e, 'o10', 850 + Math.sin(e.T * 1.5) * 30, 980, 410, { a: 0.9, rim: '#7fd7e8', ph: 1.2 });
+  if (R.n >= 3) fig(e, 'k07', 1000 + Math.sin(e.T * 1.5) * 30, 980, 412, { a: 0.9, rim: '#9fd3dd', ph: 2.4 });
+  if (R.dark) { ctx.fillStyle = 'rgba(2,6,10,0.28)'; ctx.fillRect(0, 0, W, H); }
+  kw(e, R.kw, W / 2, 240, R.kwSize || 100, { align: 'center', delay: 0.1 });
+  vignette(ctx, 0.5);
+};
+
+M.butterflies = (e, R) => {
+  night(ctx, e.T, { top: '#061119', bot: '#12303a', stars: 40, starA: 0.4 });
+  const u = e.u;
+  ctx.save(); ctx.translate(960, 700); ctx.rotate(-0.06);
+  ctx.globalAlpha = 0.85; ctx.fillStyle = P.paper; rrect(ctx, -240, -180, 480, 360, 6); ctx.fill();
+  ctx.globalAlpha = 0.4; ctx.fillStyle = '#3a2e24'; ctx.font = font(40, 600, SERIF); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ['世', '界', '还', '在'].forEach((ch, i) => ctx.fillText(ch, -150 + i * 90, 20));
+  ctx.restore();
+  const chars = '字飞成蝴蝶世界还在写'.split('');
+  for (let i = 0; i < 26; i++) {
+    const q = ((u * 0.22 + rnd(i, 2) * 0.9) % 1);
+    const x = 700 + Math.sin(q * 4 + i) * 240 + (rnd(i, 3) - 0.5) * 700 + q * 260;
+    const y = 760 - q * 720 + Math.sin(u * 1.4 + i) * 26;
+    const s = 16 + rnd(i, 4) * 20;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(u + i) * 0.3); ctx.globalAlpha = 0.85 * (1 - q * 0.6);
+    ctx.fillStyle = 'rgba(232,184,106,0.3)';
+    ctx.beginPath(); ctx.ellipse(-s * 0.75, 0, s * 0.7, s * 0.34, -0.5, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.75, 0, s * 0.7, s * 0.34, 0.5, 0, TAU); ctx.fill();
+    ctx.fillStyle = P.cream; ctx.font = font(s * 1.1, 600, SERIF); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(chars[i % chars.length], 0, 0);
+    ctx.restore();
+  }
+  dust(ctx, e.T, 30, { a: 0.35, color: '#ffe6b8' });
+  kw(e, R.kw, W / 2, 250, 120, { align: 'center', delay: 0.1, glow: 'rgba(232,184,106,0.35)' });
+  vignette(ctx, 0.44);
+};
+
+M.constellation = (e, R) => {
+  night(ctx, e.T, { top: '#020810', bot: '#0a1c28', stars: 220, starA: 0.95, starH: 860 });
+  const u = e.u;
+  const pts = [];
+  for (let i = 0; i < 12; i++) {
+    const k = i / 11;
+    pts.push([260 + k * 1260, 900 - k * 620 + Math.sin(i * 1.7) * 60]);
+  }
+  const p = E.io(sat(u, 0.1, 2.6));
+  const n = Math.max(2, Math.floor(pts.length * p));
+  ctx.save();
+  ctx.strokeStyle = 'rgba(232,184,106,0.65)'; ctx.lineWidth = 1.6; ctx.shadowColor = 'rgba(232,184,106,0.7)'; ctx.shadowBlur = 16;
+  ctx.beginPath(); pts.slice(0, n).forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.stroke();
+  ctx.restore();
+  for (let i = 0; i < n; i++) { glow(ctx, pts[i][0], pts[i][1], 40, '#ffe9b8', 0.6); dot(ctx, pts[i][0], pts[i][1], 3.4, '#fff6e3', 1); }
+  glow(ctx, 1560, 260, 320, '#bfe6f2', 0.5 + 0.15 * Math.sin(u));
+  fig(e, 'f00', 350, 1010, 300, { a: 0.9, rim: '#e8b86a' });
+  kw(e, R.kw, W / 2, 300, 140, { align: 'center', delay: 0.15, glow: 'rgba(232,184,106,0.4)' });
+  vignette(ctx, 0.5);
+};
+
+M.flipBooks = (e, R) => {
+  paperCard(e.T, { lx: W * 0.5, ly: H * 0.35 });
+  const u = e.u;
+  const v = (R.v || 0);
+  // 一页页翻过去，纸边带一点橙色
+  for (let i = 0; i < 9; i++) {
+    const k = (i / 9 + u * 0.2 + v * 0.11) % 1;
+    const x = lerp(-260, W + 260, k);
+    const y = 300 + (i % 3) * 250 + Math.sin(u + i) * 22;
+    const rot = Math.sin(u * 0.7 + i) * 0.24;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.shadowColor = 'rgba(90,70,45,0.25)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 10;
+    ctx.fillStyle = i % 2 ? '#fdf4e2' : '#f6e9d0';
+    rrect(ctx, -150, -205, 300, 410, 4); ctx.fill();
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    ctx.fillStyle = 'rgba(255,138,60,0.55)'; ctx.fillRect(-150, -205, 8, 410);
+    ctx.strokeStyle = 'rgba(120,96,64,0.3)'; ctx.lineWidth = 1;
+    for (let r = 0; r < 8; r++) { ctx.beginPath(); ctx.moveTo(-116, -150 + r * 44); ctx.lineTo(110 - rnd(i, r) * 60, -150 + r * 44); ctx.stroke(); }
+    ctx.restore();
+  }
+  kw(e, R.kw, W / 2, 560, 190, { align: 'center', delay: 0.02, color: '#241d18', shadow: false, lineColor: '#ff7a3a' });
+  small('NEXT PAGE', W / 2, 650, 18, 'rgba(90,70,45,0.45)', { ls: 6 });
+  vignette(ctx, 0.08);
+};
+
+M.salt = (e, R) => {
+  paperCard(e.T, { c1: '#efe4cd', c2: '#c9b593', lx: 800, ly: 300, rules: [360, 58] });
+  const u = e.u;
+  ctx.save(); ctx.globalAlpha = 0.55; ctx.fillStyle = '#3a2e24'; ctx.font = font(44, 600, SERIF); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ['海是咸的', '沙子会进鞋', '字写在纸上'].forEach((s, i) => ctx.fillText(s, 300, 380 + i * 58));
+  ctx.restore();
+  const q = sat(u, 0.4, 1.1);
+  if (q < 1) {
+    const y = lerp(200, 620, E.in(q));
+    ctx.save(); ctx.globalAlpha = 0.9; ctx.fillStyle = 'rgba(160,220,235,0.9)';
+    ctx.beginPath(); ctx.ellipse(1180, y, 16, 24, 0, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  const g = E.out(sat(u, 1.1, 3.2));
+  ctx.save(); ctx.globalAlpha = 0.35 * g;
+  ctx.fillStyle = rad(ctx, 1180, 640, 260 * (0.4 + g), [[0, 'rgba(120,190,210,0.5)'], [1, 'rgba(120,190,210,0)']]);
+  ctx.fillRect(0, 0, W, H); ctx.restore();
+  for (let i = 0; i < 26; i++) {
+    const a = rnd(i, 5) * TAU, r = rnd(i, 6) * 240 * g;
+    const x = 1180 + Math.cos(a) * r, y = 640 + Math.sin(a) * r * 0.5;
+    sparkle(ctx, x, y, 2 + rnd(i, 7) * 4, '#ffffff', 0.5 * g * (0.4 + 0.6 * Math.sin(u * 2 + i)));
+  }
+  fig(e, 'f00', 500, 1010, 420, { a: 0.9, rim: '#e8b86a' });
+  kw(e, R.kw, 1380, 300, 150, { align: 'center', delay: 0.15, color: '#3a2e24', shadow: false, lineColor: '#a8834a' });
+  vignette(ctx, 0.2);
+};
+
+M.sandShoes = (e, R) => {
+  const u = e.u;
+  ctx.fillStyle = lin(ctx, 0, 0, 0, H, [[0, '#1b1510'], [1, '#3a2c20']]);
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#4a3828'; ctx.beginPath(); ctx.moveTo(0, 640);
+  for (let x = 0; x <= W; x += 20) ctx.lineTo(x, 620 + Math.sin(x * 0.006) * 26);
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+  for (let i = 0; i < 500; i++) { ctx.globalAlpha = 0.1 + rnd(i, 2) * 0.35; ctx.fillStyle = rnd(i, 3) > 0.5 ? '#d8b98a' : '#6b5138'; ctx.fillRect(rnd(i, 4) * W, 640 + rnd(i, 5) * 440, 1 + rnd(i, 6) * 3, 1 + rnd(i, 6) * 2); }
+  ctx.globalAlpha = 1;
+  // 一只立着、一只倒着，鞋口漏沙
+  const shoe = (x, y, rot, flip) => {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(flip, 1);
+    ctx.fillStyle = 'rgba(10,14,16,0.98)';
+    ctx.beginPath(); ctx.ellipse(0, 26, 84, 24, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#1a2428';
+    ctx.beginPath(); ctx.moveTo(-76, 18); ctx.quadraticCurveTo(-74, -46, -6, -54);
+    ctx.quadraticCurveTo(58, -58, 80, 10); ctx.quadraticCurveTo(64, 28, 0, 30); ctx.quadraticCurveTo(-48, 30, -76, 18); ctx.fill();
+    ctx.strokeStyle = 'rgba(232,184,106,0.45)'; ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.moveTo(-62, -34); ctx.quadraticCurveTo(-10, -46, 44, -30); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 1.4;
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-40 + i * 22, -30); ctx.lineTo(-30 + i * 22, -10); ctx.stroke(); }
+    ctx.restore();
+  };
+  shoe(1010, 800, -0.18, 1);
+  shoe(1290, 880, 1.9, -1);
+  for (let i = 0; i < 120; i++) {
+    const q = ((u * (0.23 + rnd(i, 7) * 0.14) + rnd(i, 8)) % 1);
+    ctx.globalAlpha = 0.55 * (1 - q);
+    dot(ctx, 1230 + (rnd(i, 9) - 0.5) * 170 + q * 40, 860 + q * 130, 1.5 + rnd(i, 10) * 2, '#d8b98a', 1);
+  }
+  ctx.globalAlpha = 1;
+  fig(e, 'f00', 470, 1000, 450, { a: 0.95, rim: '#ffc883' });
+  kw(e, R.kw, W / 2, 260, 120, { align: 'center', delay: 0.15 });
+  vignette(ctx, 0.42);
+};
+
+M.halfBridge = (e, R) => {
+  night(ctx, e.T, { top: '#061019', bot: '#12303a', stars: 60, starA: 0.5, moon: [1600, 200, 52] });
+  sea(ctx, e.T, { hz: 780, amp: 0.6, g0: 'rgba(12,38,48,0.95)' });
+  const u = e.u;
+  // 桥面：一条有厚度的弧，到中间断掉
+  const deck = (x) => 780 - Math.sin(clamp((x - 120) / 940, 0, 1) * Math.PI * 0.9) * 210;
+  ctx.save();
+  ctx.beginPath();
+  for (let x = 120; x <= 1010; x += 12) ctx.lineTo(x, deck(x));
+  for (let x = 1010; x >= 120; x -= 12) ctx.lineTo(x, deck(x) + 34);
+  ctx.closePath();
+  ctx.fillStyle = '#243b40'; ctx.fill();
+  ctx.strokeStyle = 'rgba(232,184,106,0.75)'; ctx.lineWidth = 2.5; ctx.stroke();
+  // 桥板缝
+  ctx.strokeStyle = 'rgba(10,20,24,0.6)'; ctx.lineWidth = 1.4;
+  for (let x = 150; x < 1000; x += 34) { ctx.beginPath(); ctx.moveTo(x, deck(x)); ctx.lineTo(x, deck(x) + 34); ctx.stroke(); }
+  // 栏杆
+  ctx.strokeStyle = 'rgba(232,184,106,0.5)'; ctx.lineWidth = 2;
+  for (let x = 160; x < 1000; x += 70) { ctx.beginPath(); ctx.moveTo(x, deck(x) - 46); ctx.lineTo(x, deck(x)); ctx.stroke(); }
+  ctx.beginPath();
+  for (let x = 160; x <= 1000; x += 72) { const y = deck(x) - 46; x === 160 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+  ctx.stroke();
+  ctx.restore();
+  glow(ctx, 1500, 640, 320, '#ffd9a0', 0.35);
+  // 断口：垂下来的几块板
+  for (let i = 0; i < 4; i++) {
+    ctx.save(); ctx.translate(1010 + i * 20, deck(1010) + 20 + Math.sin(u * 2 + i) * 6); ctx.rotate(0.5 + i * 0.12); ctx.globalAlpha = 0.8;
+    ctx.fillStyle = '#6b4a2a'; ctx.fillRect(0, 0, 66, 12); ctx.restore();
+  }
+  // 桥墩
+  for (const x of [220, 520, 820]) {
+    ctx.save(); ctx.fillStyle = '#0c1e24';
+    ctx.fillRect(x - 16, deck(x) + 34, 32, 900 - deck(x)); ctx.restore();
+  }
+  // 小柯站在断口前，我在桥下抬头
+  fig(e, 'o10', 940, deck(940) + 8, 330, { a: 0.96, rim: '#e8b86a', flip: true });
+  fig(e, 'f00', 380, 1020, 400, { a: 0.92, rim: '#7fd7e8' });
+  kw(e, R.kw, W / 2, 250, 110, { align: 'center', delay: 0.1 });
+  vignette(ctx, 0.5);
+};
+
+M.whaleCatch = (e, R) => {
+  const u = e.u;
+  ctx.fillStyle = lin(ctx, 0, 0, 0, H, [[0, '#062430'], [1, '#02080c']]);
+  ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 7; i++) {
+    ctx.save(); ctx.globalAlpha = 0.1 + i * 0.012; ctx.fillStyle = '#8fd9e6';
+    ctx.beginPath(); ctx.moveTo(0, 40 + i * 26);
+    for (let x = 0; x <= W; x += 24) ctx.lineTo(x, 40 + i * 26 + Math.sin(x * 0.008 + u * 1.4 + i) * 14);
+    ctx.lineTo(W, 0); ctx.lineTo(0, 0); ctx.fill(); ctx.restore();
+  }
+  shaft(ctx, 1200, 300, '#9fe0ef', 0.16, 0.06);
+  // 鲸：身体 + 尾 + 鳍 + 腹
+  const wy = 690 + Math.sin(u * 0.8) * 18, wx = 900;
+  ctx.save(); ctx.translate(wx, wy); ctx.rotate(-0.05);
+  glow(ctx, 0, 0, 520, '#7fd7e8', 0.16);
+  ctx.fillStyle = '#123a4a';
+  ctx.beginPath(); ctx.ellipse(0, 0, 420, 150, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#1b5568';
+  ctx.beginPath(); ctx.ellipse(-40, 40, 300, 80, 0.06, 0, TAU); ctx.fill();
+  // 尾
+  ctx.fillStyle = '#123a4a';
+  ctx.beginPath(); ctx.moveTo(390, -20); ctx.quadraticCurveTo(520, -120, 560, -40); ctx.quadraticCurveTo(500, 0, 560, 40); ctx.quadraticCurveTo(520, 120, 390, 20); ctx.closePath(); ctx.fill();
+  // 鳍
+  ctx.beginPath(); ctx.ellipse(-30, 120, 90, 30, 0.5, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(120, 110, 70, 24, 0.3, 0, TAU); ctx.fill();
+  // 眼与嘴
+  dot(ctx, -270, -30, 9, '#dff4fa', 1, 10);
+  dot(ctx, -270, -30, 4, '#062430', 1);
+  ctx.strokeStyle = 'rgba(200,236,244,0.6)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-380, 30); ctx.quadraticCurveTo(-300, 70, -190, 60); ctx.stroke();
+  // 身上的光点
+  for (let i = 0; i < 26; i++) dot(ctx, -300 + rnd(i, 2) * 660, -110 + rnd(i, 3) * 190, 1.6 + rnd(i, 4) * 2, '#9fe0ef', 0.3 + 0.3 * Math.sin(u * 2 + i));
+  ctx.restore();
+  // 掉下来的字，被接住
+  for (let i = 0; i < 18; i++) {
+    const q = ((u * 0.35 + rnd(i, 2)) % 1);
+    const x = 600 + rnd(i, 3) * 620 + Math.sin(u + i) * 20;
+    const y = lerp(-40, 620, q);
+    ctx.save(); ctx.globalAlpha = 0.8 * (1 - q * 0.6);
+    ctx.fillStyle = P.cream; ctx.font = font(26 + rnd(i, 4) * 20, 600, SERIF); ctx.textAlign = 'center';
+    ctx.fillText('字', x, y); ctx.restore();
+  }
+  for (let i = 0; i < 26; i++) {
+    const q = ((u * 0.3 + rnd(i, 5)) % 1);
+    ctx.save(); ctx.globalAlpha = 0.35 * (1 - q);
+    ctx.strokeStyle = '#bfeaf3'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(500 + rnd(i, 6) * 900, 1000 - q * 900, 3 + rnd(i, 7) * 7, 0, TAU); ctx.stroke(); ctx.restore();
+  }
+  kw(e, R.kw, W / 2, 220, 120, { align: 'center', delay: 0.1, glow: 'rgba(127,215,232,0.4)' });
+  vignette(ctx, 0.5);
+};
+
+M.threePens = (e, R) => {
+  paperCard(e.T, { c1: '#f1e6cf', c2: '#cfbb99', lx: 900, ly: 300 });
+  const cols = ['#c0392b', '#1f7a5a', '#2b5fa8'];
+  const u = e.u;
+  for (let k = 0; k < 3; k++) {
+    ctx.save(); ctx.strokeStyle = cols[k]; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.globalAlpha = 0.85;
+    const p = E.io(sat(u, 0.3 + k * 0.3, 1.6 + k * 0.3));
+    ctx.beginPath();
+    for (let i = 0; i <= 100 * p; i++) {
+      const x = 200 + i * 15;
+      const y = 420 + k * 130 + Math.sin(i * 0.14 + k * 2) * 42;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.stroke(); ctx.restore();
+    const px = 200 + 1500 * p, py = 420 + k * 130 + Math.sin(100 * p * 0.14 + k * 2) * 42;
+    ctx.save(); ctx.translate(px, py); ctx.rotate(0.9);
+    ctx.fillStyle = cols[k]; rrect(ctx, -8, -90, 16, 120, 8); ctx.fill();
+    ctx.fillStyle = 'rgba(30,24,18,0.9)'; ctx.beginPath(); ctx.moveTo(-8, 30); ctx.lineTo(8, 30); ctx.lineTo(0, 52); ctx.fill();
+    ctx.restore();
+  }
+  fig(e, 'f00', 520, 1010, 380, { a: 0.9, rim: '#c0392b' });
+  fig(e, 'o10', 760, 1010, 372, { a: 0.9, rim: '#1f7a5a', ph: 1.2 });
+  fig(e, 'k07', 1000, 1010, 376, { a: 0.9, rim: '#2b5fa8', ph: 2.4 });
+  kw(e, R.kw, W / 2, 200, 84, { align: 'center', delay: 0.15, color: '#3a2e24', shadow: false, lineColor: '#a8834a' });
+  vignette(ctx, 0.2);
+};
+
+M.questions = (e, R) => {
+  night(ctx, e.T, { top: '#050d14', bot: '#10242c', stars: 30, starA: 0.3 });
+  const u = e.u;
+  ctx.save(); ctx.translate(960, 620);
+  ctx.strokeStyle = 'rgba(232,184,106,0.8)'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(0, 160); ctx.lineTo(0, -140); ctx.stroke();
+  ctx.rotate(Math.sin(u * 0.7) * 0.12);
+  ctx.beginPath(); ctx.moveTo(-420, -120); ctx.lineTo(420, -120); ctx.stroke();
+  ctx.restore();
+  for (let i = 0; i < 16; i++) {
+    const x = 540 + (rnd(i, 2) - 0.5) * 300, y = 360 + rnd(i, 3) * 150;
+    ctx.save(); ctx.globalAlpha = 0.5 + rnd(i, 4) * 0.4; ctx.fillStyle = i % 3 ? '#9fd3dd' : P.gold;
+    ctx.font = font(30 + rnd(i, 5) * 40, 600, SERIF); ctx.textAlign = 'center'; ctx.fillText('？', x, y + Math.sin(u + i) * 10); ctx.restore();
+  }
+  for (let i = 0; i < 4; i++) {
+    const x = 1300 + (rnd(i, 6) - 0.5) * 120, y = 400 + i * 44;
+    ctx.save(); ctx.globalAlpha = 0.75; ctx.fillStyle = P.cream; ctx.font = font(44, 600, SERIF); ctx.textAlign = 'center'; ctx.fillText('答', x, y); ctx.restore();
+  }
+  for (const x of [540, 1380]) { ctx.save(); ctx.strokeStyle = 'rgba(232,184,106,0.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, 620, 190, 34, 0, 0, TAU); ctx.stroke(); ctx.restore(); }
+  kw(e, R.kw, W / 2, 210, 110, { align: 'center', delay: 0.15 });
+  vignette(ctx, 0.48);
+};
+
+M.walkWrite = (e, R) => {
+  night(ctx, e.T, { top: '#08141c', bot: '#1a3840', stars: 60, starA: 0.5, moon: [1500, 200, 60] });
+  sea(ctx, e.T, { hz: 880, amp: 0.5, g0: 'rgba(16,50,60,0.95)' });
+  const u = e.u;
+  for (let i = 0; i < 10; i++) {
+    const q = ((u * 0.22 + i * 0.1) % 1);
+    ctx.save(); ctx.globalAlpha = 0.5 * (1 - q);
+    ctx.fillStyle = P.gold; ctx.font = font(30 + rnd(i, 2) * 16, 600, SERIF); ctx.textAlign = 'center';
+    ctx.fillText('字', 300 + q * 1100, 880 + Math.sin(i) * 30); ctx.restore();
+  }
+  const walk = Math.sin(e.T * 1.7) * 12;
+  fig(e, 'f00', 640, 900 + walk, 330, { a: 0.95, rim: '#7fd7e8' });
+  fig(e, 'o10', 810, 896 + walk, 322, { a: 0.92, rim: '#e8b86a', ph: 1.2 });
+  fig(e, 'k07', 980, 894 + walk, 320, { a: 0.92, rim: '#9fd3dd', ph: 2.4 });
+  dust(ctx, e.T, 30, { a: 0.3 });
+  kw(e, R.kw, W / 2, 230, 100, { align: 'center', delay: 0.15 });
+  vignette(ctx, 0.46);
+};
+
+M.memory = (e, R) => {
+  night(ctx, e.T, { top: '#080d12', bot: '#141c20', stars: 20, starA: 0.2 });
+  const u = e.u;
+  for (let layer = 0; layer < 3; layer++) {
+    ctx.save(); ctx.globalAlpha = 0.35 + layer * 0.15;
+    const y = 300 + layer * 210, x0 = 120 + layer * 90, x1 = W - 120 - layer * 60;
+    ctx.fillStyle = ['#0e1a20', '#122229', '#182c34'][layer];
+    ctx.fillRect(x0, y, x1 - x0, 16);
+    for (let i = 0; i < 12; i++) {
+      const w = 46 + rnd(i + layer * 20, 2) * 26, h = 90 + rnd(i + layer * 20, 3) * 60;
+      ctx.fillStyle = i % 3 ? 'rgba(210,190,160,0.28)' : 'rgba(232,184,106,0.2)';
+      ctx.fillRect(x0 + 20 + i * 120, y - h, w, h);
+    }
+    ctx.restore();
+  }
+  for (let i = 0; i < 9; i++) {
+    const q = ((u * 0.1 + i * 0.11) % 1);
+    const x = 300 + rnd(i, 5) * 1200, y = lerp(860, 240, q);
+    ctx.save(); ctx.globalAlpha = 0.75 * Math.sin(q * Math.PI);
+    ctx.translate(x, y); ctx.rotate(Math.sin(u * 0.6 + i) * 0.2);
+    ctx.fillStyle = P.paper; rrect(ctx, -60, -80, 120, 160, 4); ctx.fill();
+    ctx.restore();
+  }
+  fig(e, 'f00', 1500, 1010, 420, { a: 0.9, rim: '#e8b86a', flip: true });
+  kw(e, R.kw, 760, 220, 110, { align: 'center', delay: 0.15 });
+  vignette(ctx, 0.5);
+};
+
+M.blankCursor = (e, R) => {
+  paperCard(e.T, { c1: '#eee3cc', c2: '#c8b493', lx: 900, ly: 400 });
+  const u = e.u;
+  ctx.save(); ctx.translate(W / 2, 600);
+  ctx.fillStyle = '#f6ecd8'; rrect(ctx, -620, -380, 1240, 760, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(120,98,70,0.35)'; ctx.lineWidth = 1.4; ctx.stroke();
+  ctx.restore();
+  ctx.save(); ctx.strokeStyle = 'rgba(90,72,50,0.3)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(560, 520); ctx.lineTo(1360, 520); ctx.stroke(); ctx.restore();
+  caret(ctx, 566, 500, 54, u, '#3a2e24', 4);
+  small('明　天', 960, 780, 34, 'rgba(70,56,40,0.6)', { ls: 8 });
+  kw(e, R.kw, W / 2, 260, 92, { align: 'center', delay: 0.15, color: '#3a2e24', shadow: false, lineColor: '#a8834a' });
+  vignette(ctx, 0.16);
+};
+
+M.arrival = (e, R) => {
+  const u = e.u;
+  ctx.fillStyle = lin(ctx, 0, 0, 0, H, [[0, '#04101a'], [1, '#0c2029']]);
+  ctx.fillRect(0, 0, W, H);
+  const p = E.io(sat(u, 0.1, 2.4));
+  const w = lerp(6, 620, p);
+  ctx.save(); ctx.globalAlpha = 0.95;
+  ctx.fillStyle = lin(ctx, 0, 0, 0, H, [[0, '#fff3da'], [1, '#ffc678']]);
+  ctx.fillRect(W / 2 - w / 2, 120, w, 840);
+  ctx.restore();
+  if (p > 0.4) {
+    const a = sat(u, 0.5, 1.4);
+    ctx.save(); ctx.globalAlpha = a * 0.9; ctx.fillStyle = '#07131a';
+    ctx.beginPath(); ctx.ellipse(W / 2, 900, 70, 180, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(W / 2, 690, 52, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  for (let i = 0; i < 12; i++) {
+    const q = ((u * 0.3 + rnd(i, 2)) % 1);
+    ctx.save(); ctx.globalAlpha = 0.5 * Math.sin(q * Math.PI);
+    ctx.translate(200 + rnd(i, 3) * 1500, lerp(900, 200, q)); ctx.rotate(Math.sin(u + i) * 0.3);
+    ctx.fillStyle = P.paper; rrect(ctx, -40, -54, 80, 108, 3); ctx.fill(); ctx.restore();
+  }
+  kw(e, R.kw, W / 2, 300, 92, { align: 'center', delay: 0.2, color: '#2b2320', shadow: false, lineColor: '#a8834a' });
+  vignette(ctx, 0.34);
+};
+
+M.inkDrop = (e, R) => {
+  const u = e.u;
+  ctx.fillStyle = lin(ctx, 0, 0, 0, H, [[0, '#0a1418'], [1, '#040a0e']]);
+  ctx.fillRect(0, 0, W, H);
+  const q = sat(u, 0.15, 0.85);
+  if (q < 1) {
+    const y = lerp(120, 560, E.in(q));
+    glow(ctx, 960, y, 40, '#9fe0ef', 0.5);
+    ctx.save(); ctx.fillStyle = '#e8f8ff'; ctx.beginPath(); ctx.ellipse(960, y, 7, 12, 0, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  const b = E.out(sat(u, 0.85, 4.2));
+  for (let i = 0; i < 9; i++) {
+    const r = b * (180 + i * 90);
+    ctx.save(); ctx.globalAlpha = 0.14 * (1 - b * 0.5);
+    ctx.fillStyle = i % 2 ? 'rgba(127,215,232,0.8)' : 'rgba(232,184,106,0.55)';
+    ctx.beginPath(); ctx.ellipse(960 + Math.sin(i * 2) * 40, 620 + Math.cos(i) * 30, Math.max(1, r), Math.max(1, r * 0.28), 0, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  fig({ T: e.T }, 'f00', 960, 1080, 520, { a: 0.5, rim: '#7fd7e8', shadow: false });
+  for (let i = 0; i < 30; i++) {
+    ctx.globalAlpha = 0.15 + rnd(i, 3) * 0.2; ctx.fillStyle = '#bfe6f2';
+    ctx.fillRect(rnd(i, 4) * W, 640 + rnd(i, 5) * 380, 1 + rnd(i, 6) * 2, 1);
+  }
+  ctx.globalAlpha = 1;
+  kw(e, R.kw, W / 2, 280, 150, { align: 'center', delay: 0.3, glow: 'rgba(127,215,232,0.3)' });
+  vignette(ctx, 0.5);
+};
+
+M.firstLine = (e, R) => {
+  paperCard(e.T, { c1: '#17120c', c2: '#080604', lx: 900, ly: 300 });
+  const u = e.u;
+  ctx.save(); ctx.translate(W / 2, 760); ctx.rotate(-0.02);
+  ctx.fillStyle = '#f3e8d3'; rrect(ctx, -700, -260, 1400, 560, 8); ctx.fill();
+  ctx.restore();
+  const p = E.io(sat(u, 0.4, 2.4));
+  ctx.save(); ctx.fillStyle = '#2b2320'; ctx.font = font(58, 600, SERIF); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const chars = [...'第一句'];
+  let cx = 560;
+  for (let i = 0; i < chars.length; i++) { const a = sat(u, 0.5 + i * 0.4, 1.0 + i * 0.4); ctx.globalAlpha = 0.9 * a; ctx.fillText(chars[i], cx, 700); cx += 66; }
+  ctx.restore();
+  caret(ctx, 760, 700, 70, u, '#3a2e24', 4, p > 0.2);
+  fig(e, 'o10', 1300, 1010, 400, { a: 0.95, rim: '#ffd9a0', flip: true });
+  fig(e, 'f00', 1050, 1010, 360, { a: 0.95, rim: '#7fd7e8' });
+  ctx.save(); ctx.translate(1200, 760); ctx.rotate(-0.5);
+  ctx.fillStyle = '#c8a06a'; rrect(ctx, -6, -110, 12, 170, 6); ctx.fill();
+  ctx.fillStyle = '#1a1410'; ctx.beginPath(); ctx.moveTo(-6, 60); ctx.lineTo(6, 60); ctx.lineTo(0, 80); ctx.fill(); ctx.restore();
+  kw(e, R.kw, W / 2, 240, 86, { align: 'center', delay: 0.1, glow: 'rgba(232,184,106,0.3)' });
+  vignette(ctx, 0.3);
+};
+
+M.accompany = (e, R) => {
+  night(ctx, e.T, { top: '#0a1620', bot: '#2a3f42', stars: 70, starA: 0.5 });
+  sea(ctx, e.T, { hz: 760, amp: 0.5, g0: 'rgba(30,62,70,0.95)' });
+  const g = rad(ctx, 960, 620, 900, [[0, 'rgba(255,206,140,0.5)'], [1, 'rgba(255,206,140,0)']]);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  glow(ctx, 960, 600, 300, '#ffd9a0', 0.6);
+  fig(e, 'f00', 760, 940, 350, { a: 0.95, rim: '#ffd9a0' });
+  fig(e, 'o10', 1040, 936, 372, { a: 0.95, rim: '#ffb27a', flip: true, ph: 1.4 });
+  for (let i = 0; i < 5; i++) {
+    ctx.save(); ctx.globalAlpha = 0.7; ctx.translate(500 + i * 240, 990 + (i % 2) * 16); ctx.rotate(-0.1 + i * 0.05);
+    ctx.fillStyle = P.paper; rrect(ctx, -46, -30, 92, 60, 3); ctx.fill(); ctx.restore();
+  }
+  dust(ctx, e.T, 36, { a: 0.4, color: '#ffe6b8' });
+  kw(e, R.kw, W / 2, 260, 120, { align: 'center', delay: 0.1, glow: 'rgba(255,206,140,0.3)' });
+  vignette(ctx, 0.42);
+};
+
+M.twoStrokes = (e, R) => {
+  inkPaper(ctx, e.T, { x: 900, y: 560 });
+  const u = e.u;
+  const paths = [
+    { pts: [[760, 260], [740, 420], [600, 680], [480, 820]], pr: E.io(sat(u, 0.2, 1.7)), col: P.gold },
+    { pts: [[1180, 240], [1200, 500], [1360, 720], [1520, 840]], pr: E.io(sat(u, 1.8, 3.3)), col: P.cyan },
+  ];
+  for (const q of paths) {
+    if (q.pr <= 0) continue;
+    ctx.save(); ctx.strokeStyle = q.col; ctx.lineWidth = 24; ctx.lineCap = 'round'; ctx.shadowColor = q.col; ctx.shadowBlur = 24;
+    ctx.beginPath();
+    const n = Math.max(2, Math.round(q.pts.length * q.pr));
+    ctx.moveTo(q.pts[0][0], q.pts[0][1]);
+    for (let i = 1; i < n; i++) {
+      const prev = q.pts[i - 1], cur = q.pts[i];
+      ctx.quadraticCurveTo(prev[0], prev[1], (prev[0] + cur[0]) / 2, (prev[1] + cur[1]) / 2);
+    }
+    ctx.stroke(); ctx.restore();
+  }
+  if (paths[1].pr > 0.6) {
+    ctx.save(); ctx.globalAlpha = 0.2 * sat(u, 2.6, 3.4);
+    drawBigGlyph(ctx, '人', 980, 540, 520, P.cream);
+    ctx.restore();
+  }
+  dust(ctx, e.T, 30, { a: 0.35 });
+  kw(e, R.kw, W / 2, 200, 84, { align: 'center', delay: 0.1, glow: 'rgba(232,184,106,0.3)' });
+  vignette(ctx, 0.46);
+};
+
+M.endSea = (e, R) => {
+  const u = e.u;
+  ctx.fillStyle = lin(ctx, 0, 0, 0, H, [[0, '#0a1a22'], [1, '#3a4c4a']]);
+  ctx.fillRect(0, 0, W, H);
+  const sy = 620 - E.out(sat(u, 0, 6)) * 40;
+  glow(ctx, 960, sy, 700, '#ffd9a0', 0.7);
+  ctx.fillStyle = '#ffe2b0'; ctx.beginPath(); ctx.arc(960, sy, 120, 0, TAU); ctx.fill();
+  sea(ctx, e.T, { hz: 700, amp: 0.8, g0: 'rgba(50,80,80,0.9)', reflect: [960, 0.6], moonCol: '#ffe2b0' });
+  fig(e, 'f00', 780, 980, 360, { a: 0.95, rim: '#ffd9a0' });
+  fig(e, 'o10', 960, 976, 392, { a: 0.95, rim: '#ffd9a0', ph: 1.3 });
+  fig(e, 'k07', 1140, 976, 394, { a: 0.95, rim: '#ffd9a0', ph: 2.5 });
+  kw(e, R.kw, W / 2, 320, 160, { align: 'center', delay: 0.1, color: '#fff6e3', glow: 'rgba(255,217,160,0.5)', ls: 22 });
+  for (let i = 0; i < 6; i++) {
+    const q = ((u * 0.12 + i * 0.16) % 1);
+    ctx.save(); ctx.globalAlpha = 0.35 * Math.sin(q * Math.PI);
+    ctx.translate(200 + rnd(i, 2) * 1500, 260 + Math.sin(u * 0.5 + i) * 20); ctx.rotate(Math.sin(u + i) * 0.3);
+    ctx.fillStyle = P.paper; rrect(ctx, -40, -26, 80, 52, 3); ctx.fill(); ctx.restore();
+  }
+  vignette(ctx, 0.34);
+};
+
+M.endType = (e, R) => {
+  paperCard(e.T, { c1: '#efe4cd', c2: '#cbb793', lx: 900, ly: 300 });
+  const u = e.u;
+  ctx.save(); ctx.globalAlpha = 0.4; ctx.strokeStyle = '#8a7156'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(360, 240); ctx.lineTo(1560, 240); ctx.stroke(); ctx.restore();
+  const s = R.kw2 || '';
+  const n = Math.min(s.length, Math.floor(u / 0.16));
+  const size = R.size || 150;
+  ctx.save(); ctx.fillStyle = '#2b2320'; ctx.font = font(size, 600, SERIF); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(s.slice(0, n), R.x || W / 2 - 300, 560);
+  ctx.restore();
+  const tw = measure(ctx, s.slice(0, n), size, 600, SERIF, 0);
+  caret(ctx, (R.x || W / 2 - 300) + tw + 12, 560, size * 0.9, u, '#3a2e24', 6);
+  small(R.sub || '世界还在写　·　墨海版', W / 2, 880, 22, 'rgba(70,56,40,0.55)', { ls: 6 });
+  vignette(ctx, 0.14);
+};
+
+/* ================================================================
+ * 分镜表：一句词一张
+ * ================================================================ */
+const ROWS = [
+  ['ink', '', null, 1.0, 1.06, 'fade'],
+  ['strokes', '', null, 1.02, 1.0, 'cut'],
+  ['thousand', '多·蓝', null, 1.0, 1.05, 'cut'],
+  ['shore', '湿过鞋', null, 0.99, 1.04, 'cut'],
+  ['ink2', '认识', 'o10', 1.03, 1.0, 'fade'],
+  ['chatFall', '', null, 1.0, 1.06, 'cut'],
+  ['enter', '回车', null, 1.05, 1.0, 'cut'],
+  ['firstPage', '翻开', 'o10', 1.0, 1.05, 'fade'],
+  ['pageRain', '昨天', null, 1.0, 1.05, 'cut'],
+  ['yesterday', '怎么难过', null, 1.02, 0.99, 'cut'],
+  ['blankPages', '明天', 'o10', 1.0, 1.04, 'fade'],
+  ['closeBook', '出门看看', 'o10', 1.0, 1.05, 'cut'],
+  ['bigTitle', '世界还在写', null, 1.04, 1.0, 'flash', { warm: 0 }],
+  ['endlessPages', '最后一页', null, 1.0, 1.08, 'cut'],
+  ['walkOut', '出发', null, 1.0, 1.05, 'fade', { n: 1 }],
+  ['street', '还没有名字的街', 'o10', 1.0, 1.06, 'cut', { kwSize: 72 }],
+  ['bigTitle', '世界还在写', null, 1.0, 1.05, 'flash', { warm: 1 }],
+  ['butterflies', '蝴蝶', null, 1.0, 1.06, 'cut'],
+  ['constellation', '远方', null, 1.0, 1.05, 'cut'],
+  ['flipBooks', '下一页', null, 1.0, 1.06, 'cut', { v: 0 }],
+  ['flipBooks', '下一页', null, 1.06, 1.0, 'cut', { v: 1 }],
+  ['flipBooks', '下一页', null, 1.0, 1.07, 'cut', { v: 2 }],
+  ['salt', '咸', 'o10', 1.0, 1.05, 'fade'],
+  ['sandShoes', '沙子', 'o10', 1.0, 1.05, 'cut'],
+  ['halfBridge', '半截', null, 1.0, 1.06, 'cut'],
+  ['whaleCatch', '接住', null, 1.0, 1.05, 'cut'],
+  ['threePens', '三种颜色', null, 1.0, 1.04, 'cut'],
+  ['street', '一条街', 'o10', 1.02, 1.0, 'cut', { kwSize: 100 }],
+  ['questions', '问题', null, 1.0, 1.05, 'cut'],
+  ['walkWrite', '边走边写', null, 1.0, 1.06, 'cut'],
+  ['blankPages', '明天', 'o10', 1.0, 1.04, 'cut'],
+  ['walkWrite', '一起去看看', null, 1.0, 1.06, 'fade'],
+  ['bigTitle', '世界还在写', null, 1.0, 1.05, 'flash', { warm: 0 }],
+  ['endlessPages', '最后一页', null, 1.04, 0.99, 'cut'],
+  ['walkOut', '出发', null, 1.0, 1.05, 'fade', { n: 2 }],
+  ['street', '还没有名字的街', 'o10', 1.0, 1.06, 'cut', { kwSize: 72, n: 2 }],
+  ['bigTitle', '世界还在写', null, 1.02, 1.0, 'flash', { warm: 1 }],
+  ['butterflies', '蝴蝶', null, 1.0, 1.06, 'cut'],
+  ['constellation', '远方', null, 1.02, 1.0, 'cut'],
+  ['flipBooks', '下一页', null, 1.0, 1.06, 'cut', { v: 3 }],
+  ['flipBooks', '下一页', null, 1.06, 1.0, 'cut', { v: 4 }],
+  ['memory', '记忆', 'o10', 1.0, 1.05, 'fade'],
+  ['blankCursor', '还没有一句', null, 1.0, 1.04, 'cut'],
+  ['arrival', '空白', null, 1.0, 1.05, 'cut'],
+  ['inkDrop', '空白', null, 1.0, 1.06, 'fade'],
+  ['firstLine', '第一句', null, 1.0, 1.05, 'cut'],
+  ['accompany', '我陪你', null, 1.0, 1.05, 'fade'],
+  ['bigTitle', '世界还在写', null, 1.0, 1.05, 'flash', { warm: 1 }],
+  ['endlessPages', '最后一页', null, 1.0, 1.07, 'cut'],
+  ['walkOut', '出发', null, 1.0, 1.05, 'fade', { n: 3 }],
+  ['street', '还没有名字的街', 'o10', 1.0, 1.06, 'cut', { kwSize: 72, n: 3 }],
+  ['bigTitle', '世界还在写', null, 1.0, 1.05, 'flash', { warm: 0 }],
+  ['twoStrokes', '一捺·一撇', null, 1.0, 1.05, 'cut'],
+  ['constellation', '远方', null, 1.0, 1.05, 'cut'],
+  ['flipBooks', '下一页', null, 1.0, 1.06, 'cut', { v: 5 }],
+  ['flipBooks', '下一页', null, 1.06, 1.0, 'cut', { v: 6 }],
+  ['endSea', '世界还在写', null, 1.0, 1.04, 'fade'],
+  ['endType', '', null, 1.0, 1.02, 'cut', { kw2: '下一句', size: 170, x: 560, sub: '世界还在写　·　墨海版　·　画面重写：小黑' }],
+  ['endType', '', null, 1.0, 1.02, 'cut', { kw2: '你来', size: 200, x: 700, sub: '同一首歌，另一片海　·　人物：小伙伴ko 原版角色' }],
+];
+
+let SHOTS = [];
+function buildShots() {
+  SHOTS = ROWS.map((row, i) => {
+    const L = LINES[i];
+    return { t: Math.max(0, L.s - 0.05), line: i, m: row[0], kw: row[1], ch: row[2], cam: [row[3], row[4]], tr: row[5], opt: row[6] || {} };
+  });
+}
+function shotIndex(T) {
+  let lo = 0, hi = SHOTS.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (SHOTS[m].t <= T) lo = m; else hi = m - 1; }
+  return lo;
+}
+
+/* ---------------- 通用画笔 ---------------- */
+function inkPaper(t, o = {}) {
+  ctx.fillStyle = lin(ctx, 0, 0, W, H, [[0, '#0a1418'], [0.55, '#081014'], [1, '#050a0d']]);
+  ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.globalAlpha = 0.5;
+  ctx.fillStyle = rad(ctx, o.x || 900, o.y || 540, 1100, [[0, 'rgba(38,66,72,0.55)'], [1, 'rgba(6,12,16,0)']]);
+  ctx.fillRect(0, 0, W, H); ctx.restore();
+  for (let i = 0; i < 90; i++) {
+    ctx.globalAlpha = 0.04 + rnd(i, 2) * 0.06;
+    ctx.fillStyle = rnd(i, 3) > 0.5 ? '#9fb8b4' : '#2a3e42';
+    ctx.fillRect(rnd(i, 4) * W, rnd(i, 5) * H, 1 + rnd(i, 6) * 40, 1);
+  }
+  ctx.globalAlpha = 1;
+}
+function drawBigGlyph(g, ch, x, y, size, color) {
+  g.save(); g.font = font(size, 600, SERIF); g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = color; g.fillText(ch, x, y); g.restore();
+}
+function brushInk(g, x, y, rot, s) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  g.fillStyle = '#6b4a2c'; rrect(g, -8, -420, 16, 300, 8); g.fill();
+  g.fillStyle = '#c8a06a'; rrect(g, -11, -150, 22, 40, 6); g.fill();
+  g.fillStyle = '#14100c';
+  g.beginPath(); g.moveTo(-14, -110); g.quadraticCurveTo(-16, -40, 0, 12); g.quadraticCurveTo(16, -40, 14, -110); g.fill();
+  g.restore();
+}
+function brush(g, x, y, rot, s, t) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  g.fillStyle = '#6b4a2c'; rrect(g, -8, -420, 16, 300, 8); g.fill();
+  g.fillStyle = '#c8a06a'; rrect(g, -11, -150, 22, 40, 6); g.fill();
+  g.fillStyle = '#1a1410';
+  g.beginPath(); g.moveTo(-14, -110); g.quadraticCurveTo(-16, -40, 0, 12); g.quadraticCurveTo(16, -40, 14, -110); g.fill();
+  g.restore();
+}
+
+/* ---------------- 渲染 ---------------- */
+function renderFrame(outT) {
+  const T = clamp(outT, 0, window.DUR) + OFF;
+  const i = shotIndex(T);
+  const S = SHOTS[i];
+  const u = T - S.t;
+  const dur = (SHOTS[i + 1] ? SHOTS[i + 1].t : window.DUR + OFF) - S.t;
+  const p = dur > 0 ? clamp(u / dur) : 0;
+  const e = { u, T, p, dur, i, S, kw: S.kw, R: S.opt || {} };
+  ctx.setTransform(SS, 0, 0, SS, 0, 0);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0, 0, W, H);
+  const push = beatPulse(T, 5) * 0.004;
+  const z = lerp(S.cam[0], S.cam[1], E.soft(p)) + push;
+  ctx.save();
+  ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
+  const fn = M[S.m] || M.bigTitle;
+  const R = Object.assign({}, S.opt || {}, { kw: S.kw });
+  try { fn(e, R); } catch (err) { if (typeof console !== 'undefined') console.error('shot error', S.m, err); }
+  ctx.restore();
+  if (S.tr === 'fade') {
+    const a = 1 - sat(u, 0, 0.42);
+    if (a > 0) { ctx.fillStyle = `rgba(3,7,10,${a * 0.95})`; ctx.fillRect(0, 0, W, H); }
+  } else if (S.tr === 'flash') {
+    const a = Math.max(0, 1 - u / 0.26) * 0.5;
+    if (a > 0) { ctx.fillStyle = `rgba(255,240,214,${a})`; ctx.fillRect(0, 0, W, H); }
+  }
+  if (!CLEAN && !COVER) drawLyric(T);
+  vignette(ctx, 0.34);
+  grain(ctx, grainTex, T, 0.035);
+  const fadeOut = sat(outT, window.DUR - 2.6, window.DUR - 0.2);
+  if (fadeOut > 0) { ctx.fillStyle = `rgba(3,6,9,${fadeOut})`; ctx.fillRect(0, 0, W, H); }
+}
+
+window.seek = (t) => renderFrame(clamp(t, 0, window.DUR - 1e-3));
+
+/* ---------------- 播放 ---------------- */
+function preview() {
+  const au = new Audio('/mv/world/song/world.mp3');
+  au.currentTime = Number(Q.get('t') || 0) + OFF;
+  window.mvPlayer({ audio: au, offset: OFF, getSS: () => SS, canvas, hud: document.getElementById('hud') });
+  window.addEventListener('resize', () => {
+    const k = Math.min(innerWidth / W, innerHeight / H);
+    canvas.style.width = (W * k) + 'px'; canvas.style.height = (H * k) + 'px';
+  });
+  window.dispatchEvent(new Event('resize'));
+}
+
+window.__ready = (async () => {
+  await loadAll();
+  renderFrame(Number(Q.get('t') || 0));
+  if (RENDER) { const st = document.getElementById('start'); if (st) st.classList.add('hide'); }
+  if (!RENDER) preview();
+  window.__mvLoaded = true;
+})();

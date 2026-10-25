@@ -53,6 +53,8 @@ public class AssetServer {
     private Thread thread;
     private volatile boolean running = true;
     private final Map<String, Dl> dls = new HashMap<>();
+    private java.io.RandomAccessFile recRaf = null;
+    private File recTmp = null;
 
     AssetServer(Context ctx) {
         this.ctx = ctx;
@@ -175,6 +177,59 @@ public class AssetServer {
                 if (lh.startsWith("range:")) range = h.substring(6).trim();
             }
 
+            if (path.equals("/__recBegin") && method.equals("POST")) {
+                String n0 = param(query, "name");
+                String name = (n0 == null || n0.isEmpty()) ? "mv-render.mp4" : n0.replaceAll("[^A-Za-z0-9._-]", "_");
+                if (recRaf != null) { try { recRaf.close(); } catch (IOException ignored) {} recRaf = null; }
+                recTmp = new File(ctx.getCacheDir(), "stream-" + name);
+                recRaf = new java.io.RandomAccessFile(recTmp, "rw");
+                recRaf.setLength(0);
+                json(out, "{\"ok\":true,\"name\":\"" + name + "\"}");
+                return;
+            }
+            if (path.equals("/__recWrite") && method.equals("POST")) {
+                if (recRaf == null) { text(out, 409, "no session"); return; }
+                String ps = param(query, "pos");
+                if (ps != null && ps.length() > 0) {
+                    try { recRaf.seek(Long.parseLong(ps)); } catch (Exception ignored) {}
+                }
+                byte[] buf = new byte[262144];
+                long left = contentLength;
+                int n;
+                while (left > 0 && (n = in.read(buf, 0, (int) Math.min(buf.length, left))) > 0) {
+                    recRaf.write(buf, 0, n);
+                    left -= n;
+                }
+                json(out, "{\"ok\":true}");
+                return;
+            }
+            if (path.equals("/__recEnd") && method.equals("POST")) {
+                if (recRaf == null) { text(out, 409, "no session"); return; }
+                try { recRaf.close(); } catch (IOException ignored) {}
+                recRaf = null;
+                String n0 = param(query, "name");
+                String name = (n0 == null || n0.isEmpty()) ? "mv-render.mp4" : n0.replaceAll("[^A-Za-z0-9._-]", "_");
+                long written = recTmp == null ? -1 : recTmp.length();
+                String where = recTmp == null ? "" : saveToDownloads(recTmp, name);
+                recTmp = null;
+                json(out, "{\"ok\":true,\"bytes\":" + written + ",\"path\":\"" + where.replace("\\", "/") + "\"}");
+                return;
+            }
+            if (path.equals("/__keepawake")) {
+                // 渲染输出期间点亮屏幕（避免息屏后 WebView 停帧，录出半截视频）
+                final boolean keep = !"0".equals(param(query, "on"));
+                if (ctx instanceof android.app.Activity) {
+                    ((android.app.Activity) ctx).runOnUiThread(new Runnable() {
+                        public void run() {
+                            android.view.Window w = ((android.app.Activity) ctx).getWindow();
+                            if (keep) w.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                            else w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                        }
+                    });
+                }
+                json(out, "{\"keep\":" + keep + "}");
+                return;
+            }
             if (path.equals("/__rec") && method.equals("POST")) {
                 receiveRecording(in, out, query, contentLength);
                 return;
@@ -217,8 +272,71 @@ public class AssetServer {
         }
     }
 
+    /**
+     * 每一张 HTML（内置页 / R2 包里的 MV / 导入的 MV）都注入 mv-export.js：
+     * 画质档位 HUD + 「渲染输出 MP4」按钮。注入在服务端做，MV 页面源码不用改。
+     */
+    private boolean serveInjectedHtml(OutputStream out, String path) throws IOException {
+        String lower = path.toLowerCase(Locale.US);
+        if (!(lower.endsWith(".html") || path.equals("/"))) return false;
+        byte[] raw = readAllForInject(path);
+        if (raw == null) return false;
+        String s = new String(raw, "UTF-8");
+        // <head> 里先挂一个「WebGL 保留绘制缓冲」的开关脚本（渲染输出逐帧取帧要用）
+        if (!s.contains("/mv-pre.js") && s.contains("<head>")) {
+            s = s.replaceFirst("<head>", "<head><script src=\"/mv-pre.js\"></script>");
+        }
+        if (!s.contains("/mv-export.js") && s.contains("</body>")) {
+            s = s.replace("</body>", "<script src=\"/mp4-muxer.js\"></script>\n<script src=\"/mv-export.js\"></script>\n</body>");
+            byte[] body = s.getBytes("UTF-8");
+            out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n" +
+                    "Cache-Control: no-cache\r\nContent-Length: " + body.length +
+                    "\r\nConnection: close\r\n\r\n").getBytes("UTF-8"));
+            out.write(body);
+            out.flush();
+            return true;
+        }
+        return false;
+    }
+
+    private static byte[] readAll(InputStream is) throws IOException {
+        java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream(Math.max(4096, is.available()));
+        byte[] b = new byte[65536];
+        int n;
+        while ((n = is.read(b)) > 0) bo.write(b, 0, n);
+        is.close();
+        return bo.toByteArray();
+    }
+
+    /** 与 serve() 相同的路径解析，只用来读出 HTML 全文（页面都不大）。 */
+    private byte[] readAllForInject(String path) {
+        try {
+            if (path.startsWith("/custom/")) {
+                String[] parts = path.substring(8).split("/", 2);
+                String id = parts[0];
+                if (!id.matches("[A-Za-z0-9._-]+")) return null;
+                String rel = parts.length > 1 ? parts[1] : "index.html";
+                if (rel.isEmpty() || rel.endsWith("/")) rel = rel + "index.html";
+                File base = new File(mvRoot(), id).getCanonicalFile();
+                File f = new File(base, rel).getCanonicalFile();
+                if (!f.getPath().startsWith(base.getPath()) || !f.isFile()) return null;
+                if (f.length() > 8L * 1024 * 1024) return null;
+                return readAll(new FileInputStream(f));
+            }
+            if (path.startsWith("/execute/")) {
+                Object[] r = openAsset("execute/" + path.substring(9));
+                return r == null ? null : readAll((InputStream) r[1]);
+            }
+            Object[] r = openAsset("www" + (path.equals("/") ? "/index.html" : path));
+            return r == null ? null : readAll((InputStream) r[1]);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** 直接把文件流式写给客户端，支持 Range；返回 false 表示已经写过错误响应。 */
     private boolean serve(OutputStream out, String path, String range) throws IOException {
+        if (serveInjectedHtml(out, path)) return true;
         String m = mime(path);
         long total;
         InputStream in;
@@ -401,27 +519,34 @@ public class AssetServer {
         File zip = new File(mvRoot(), ".dl-" + pkg + ".zip");
         File tmp = new File(mvRoot(), ".dl-" + pkg + ".dir");
         try {
-            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-            c.setConnectTimeout(20000);
-            c.setReadTimeout(60000);
-            c.setInstanceFollowRedirects(true);
-            c.setRequestProperty("User-Agent", "MV-Renderer/1.1.0");
-            int code = c.getResponseCode();
-            if (code != 200) throw new IOException("HTTP " + code);
-            long len = c.getContentLength();
-            if (len > 0) d.total = len;
+            // 支持分卷：u=url1,url2,url3 —— 按顺序拼接成一个 zip 再校验
+            String[] urls = url.split(",");
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            InputStream in = c.getInputStream();
             FileOutputStream fo = new FileOutputStream(zip);
             byte[] buf = new byte[65536];
-            int r;
-            while ((r = in.read(buf)) > 0) {
-                if (d.cancel) throw new IOException("已取消");
-                fo.write(buf, 0, r);
-                md.update(buf, 0, r);
-                d.got += r;
+            for (int ui = 0; ui < urls.length; ui++) {
+                String one = urls[ui].trim();
+                if (one.isEmpty()) continue;
+                HttpURLConnection c = (HttpURLConnection) new URL(one).openConnection();
+                c.setConnectTimeout(20000);
+                c.setReadTimeout(120000);
+                c.setInstanceFollowRedirects(true);
+                c.setRequestProperty("User-Agent", "MV-Renderer/1.4.1");
+                int code = c.getResponseCode();
+                if (code != 200) throw new IOException("HTTP " + code + "（第 " + (ui + 1) + " 卷）");
+                long len = c.getContentLength();
+                if (len > 0) d.total += len;
+                InputStream in = c.getInputStream();
+                int r;
+                while ((r = in.read(buf)) > 0) {
+                    if (d.cancel) throw new IOException("已取消");
+                    fo.write(buf, 0, r);
+                    md.update(buf, 0, r);
+                    d.got += r;
+                }
+                in.close();
             }
-            fo.close(); in.close();
+            fo.close();
             if (sha != null && sha.length() > 0 && !hex(md.digest()).equalsIgnoreCase(sha)) {
                 throw new IOException("校验失败（sha256 不一致）");
             }

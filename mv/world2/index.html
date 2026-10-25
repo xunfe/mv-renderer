@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="cache-control" content="no-store">
+<title>世界还在写 · 墨海版（模仿版）</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #050b12; overflow: hidden; }
+  #c { display: block; width: 1920px; height: 1080px; }
+  body.fit #c { width: 100vw; height: 56.25vw; max-height: 100vh; max-width: 177.78vh; margin: 0 auto; }
+  #hud { position: fixed; left: 14px; bottom: 10px; z-index: 3; color: #b9d4decc; font: 12px/1.4 ui-sans-serif, system-ui; letter-spacing: .04em; text-shadow: 0 1px 6px #000a; }
+  #start {
+    position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; cursor: pointer;
+    background: radial-gradient(circle at 50% 44%, rgba(127,215,232,.06), rgba(3,7,12,.86));
+    color: #eaf3f5; transition: opacity .55s ease;
+  }
+  #start.hide { opacity: 0; pointer-events: none; }
+  #start .box { text-align: center; padding: 24px; }
+  #start .eyebrow { font: 500 11px/1 ui-monospace, monospace; letter-spacing: .38em; color: #7fd7e8; margin-bottom: 18px; }
+  #start b { display: block; font: 600 clamp(34px, 7vw, 72px)/1.15 "Noto Serif SC", "Noto Serif CJK SC", serif; letter-spacing: .2em; text-indent: .2em; text-shadow: 0 0 50px rgba(127,215,232,.26); }
+  #start .line { width: 44px; height: 1px; background: #e8b86a; margin: 22px auto; opacity: .85; }
+  #start .go { display: inline-flex; align-items: center; gap: 10px; font: 500 13px/1 ui-sans-serif, system-ui; letter-spacing: .16em; color: #eaf3f5; border: 1px solid rgba(234,243,245,.34); border-radius: 999px; padding: 12px 22px; }
+  #start .go i { width: 0; height: 0; border-left: 9px solid #7fd7e8; border-top: 6px solid transparent; border-bottom: 6px solid transparent; display: block; }
+  #start small { display: block; margin-top: 16px; font: 400 11px/1.7 ui-sans-serif, system-ui; letter-spacing: .08em; color: rgba(234,243,245,.48); }
+  #qbar { position: fixed; right: 14px; top: 14px; z-index: 7; display: flex; align-items: center; gap: 8px; opacity: .8; transition: opacity .3s; }
+  #qbar:hover { opacity: 1; }
+  #qbar label { font: 500 10px/1 ui-monospace, monospace; letter-spacing: .16em; color: rgba(234,243,245,.55); }
+  #q { background: rgba(6,12,18,.72); color: #eaf3f5; border: 1px solid rgba(255,255,255,.22); border-radius: 8px; padding: 5px 8px; font: 500 11px/1 ui-sans-serif, system-ui; outline: none; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div id="hud"></div>
+<div id="qbar"><label for="q">画质</label><select id="q" aria-label="画质">
+  <option value="1080p60">1080P 60 · 默认</option>
+  <option value="4k60">4K 60</option>
+  <option value="4k120">4K 120</option>
+  <option value="4kmax">4K 不限帧</option>
+  <option value="2k30">2K 30</option>
+  <option value="1080p30">1080P 30</option>
+  <option value="720p30">720P 30</option>
+</select></div>
+<div id="start" class="mv-start"><div class="box">
+  <div class="eyebrow">世界还在写 · 墨海版</div>
+  <b>下一句，你来</b>
+  <div class="line"></div>
+  <span class="go"><i></i>点击开始</span>
+  <small>重绘版 1.0.9：按原版《世界还在写》的画法重排镜头——奶油纸、白描边大字、大立绘；人物与音乐仍是小伙伴ko 的原作<br>3:24 · 播放结束自动返回合集</small>
+</div></div>
+<script>if (!new URLSearchParams(location.search).has('render')) document.body.classList.add('fit');</script>
+<script src="/mv-start.js"></script>
+<script src="/mv-return.js"></script>
+<script src="/mv-player.js"></script>
+<script type="module" src="src/main.js"></script>
+<script src="/mv-quality.js"></script>
+<script src="/mv-progress.js"></script>
+</body>
+</html>

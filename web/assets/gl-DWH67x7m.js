@@ -1,4 +1,4 @@
-import{F as e,H as t,Jt as n,O as r,R as i,X as a,Xt as o,a as s,gn as c,k as l,l as u,mn as d,ot as f,pn as p,s as m,w as h,zt as g}from"./three.core-D_1riXuZ.js";import{n as _,t as v}from"./common-D_t11TS8.js";var y=1920,b=1080,x=y*_,S=b*_,C={value:-1},w=`
+import{F as e,H as t,Jt as n,O as r,R as i,X as a,Xt as o,a as s,gn as c,k as l,l as u,mn as d,ot as f,pn as p,s as m,w as h,zt as g}from"./three.core-D_1riXuZ.js";import{n as _,t as v}from"./common-D_t11TS8.js";var y=1920,b=1080,x=Math.round(y*_),S=Math.round(b*_),C={value:-1},w=`
 uniform int ssTap;
 int ssK0() { return ssTap < 0 ? 0 : ssTap; }
 int ssK1() { return ssTap < 0 ? 4 : ssTap + 1; }

@@ -115,6 +115,25 @@ async function serveFile(req, res, file) {
     partial = true;
   }
 
+  // HTML：注入 mv-pre.js（WebGL 保留绘制缓冲）+ mp4-muxer + mv-export.js（HUD / 渲染输出）
+  if (/\.html?$/i.test(file)) {
+    let html = fs.readFileSync(file, 'utf8');
+    if (!html.includes('/mv-pre.js') && html.includes('<head>')) {
+      html = html.replace('<head>', '<head><script src="/mv-pre.js"></script>');
+    }
+    if (!html.includes('/mv-export.js') && html.includes('</body>')) {
+      html = html.replace('</body>', '<script src="/mp4-muxer.js"></script><script src="/mv-export.js"></script>\n</body>');
+    }
+    const buf = Buffer.from(html, 'utf8');
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'Content-Length': buf.length,
+    });
+    if (req.method === 'HEAD') return res.end();
+    return res.end(buf);
+  }
+
   const headers = {
     'Content-Type': mimeOf(file),
     'Accept-Ranges': 'bytes',
@@ -129,6 +148,8 @@ async function serveFile(req, res, file) {
   rs.on('error', () => res.destroy());
   rs.pipe(res);
 }
+
+let recFd = null, recPath = null, recName = null;
 
 function startServer({ root, userData, downloads }) {
   const webRoot = path.resolve(root);
@@ -219,6 +240,42 @@ function startServer({ root, userData, downloads }) {
       }
 
       if (req.method === 'POST' && p === '/__rec') return saveRecording(req, res, u.searchParams);
+
+      // 渲染输出的分块写盘（安卓端同名接口的 PC 版）
+      if (p === '/__keepawake') return json(res, { keep: true });
+      if (req.method === 'POST' && p === '/__recBegin') {
+        const name = (u.searchParams.get('name') || 'mv-render.mp4').replace(/[^A-Za-z0-9._-]/g, '_');
+        try { if (recFd !== null) fs.closeSync(recFd); } catch (e) {}
+        recPath = path.join(userData, 'stream-' + name);
+        recName = name;
+        recFd = fs.openSync(recPath, 'w+');
+        return json(res, { ok: true, name });
+      }
+      if (req.method === 'POST' && p === '/__recWrite') {
+        if (recFd === null) return text(res, 409, 'no session');
+        const pos = parseInt(u.searchParams.get('pos') || '0', 10) || 0;
+        const chunks = [];
+        for await (const c of req) chunks.push(c);
+        const buf = Buffer.concat(chunks);
+        fs.writeSync(recFd, buf, 0, buf.length, pos);
+        return json(res, { ok: true });
+      }
+      if (req.method === 'POST' && p === '/__recEnd') {
+        if (recFd === null) return text(res, 409, 'no session');
+        const size = fs.fstatSync(recFd).size;
+        try { fs.closeSync(recFd); } catch (e) {}
+        recFd = null;
+        let saved = '';
+        try {
+          const dl = downloads || path.join(require('os').homedir(), 'Downloads');
+          fs.mkdirSync(dl, { recursive: true });
+          const target = path.join(dl, recName || 'mv-render.mp4');
+          fs.copyFileSync(recPath, target);
+          fs.unlinkSync(recPath);
+          saved = target;
+        } catch (e) { saved = ''; }
+        return json(res, { ok: true, bytes: size, path: saved });
+      }
       if (p === '/__imports') return json(res, listImports());
       if (req.method === 'POST' && p === '/__delete') {
         const id = u.searchParams.get('id');

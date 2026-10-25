@@ -139,13 +139,13 @@
   };
   var CATALOG_ORDER = ['world', 'world2', 'flip', 'future', 'flip2', 'future2', 'math', 'chemistry', 'hangtian', 'shadow', 'deepseek', 'execute'];
 
-  /* ---------------- 可下载扩展包（Cloudflare R2） ---------------- */
-  var R2 = 'https://pub-1afc957e032a4de18e300f40f21195f1.r2.dev/mv/1.1.0/';
+  /* ---------------- 可下载扩展包（GitHub Releases，国内建议挂代理） ---------------- */
+  var CH_BASE = 'https://github.com/xunfe/mv-renderer/releases/download/v1.4.2/';
   var PKGS = {
-    ai: { title: 'AI娘角色主题曲MV', bytes: 228732166, sha256: '68e2f5759e2cf464a5c8b68716f9f802e56fa1c93d2b5b38bd00b2bf84efb811', url: R2 + 'ai.zip' },
-    science: { title: '科普简史', bytes: 45920569, sha256: '8b7fe509e400fad0521fac098c80456a4f455823a4648b0d44d0b1f41ceef31a', url: R2 + 'science.zip' },
-    letters: { title: '大肥鱼的情书', bytes: 4537851, sha256: '38db0aeec8381d4f75fc3dac986daf76ba536b4466a2b33d4537f036c5a6c5ca', url: R2 + 'letters.zip' },
-    execute: { title: 'word excuse me', bytes: 4112806, sha256: '4c6548499d100fa9a225491d0cd567cb20f0ff06763932b7c684f1da0fe11a4e', url: R2 + 'execute.zip' }
+    ai: { title: 'AI娘角色主题曲MV', bytes: 228732165, sha256: '2cc51ac8a9f05e50d776fc9266fe9fe7b80b1d37d59729a0b972f4ca484eda03', url: CH_BASE + 'ai.zip' },
+    science: { title: '科普简史', bytes: 45920569, sha256: 'b208075b10258311a6395f53336f9363d58f0f002a8491d8790be38ced03891e', url: CH_BASE + 'science.zip' },
+    letters: { title: '大肥鱼的情书', bytes: 4537851, sha256: '98fab4b9815f5d88705530457c00f47374776548eb5ae161041cb3dec3bcfe28', url: CH_BASE + 'letters.zip' },
+    execute: { title: 'word excuse me', bytes: 4112806, sha256: '6150520e842cad5eb21575d1b13875b71650be41411ec288539783f0c79d9671', url: CH_BASE + 'execute.zip' }
   };
   var PKG_OF = { world: 'ai', world2: 'ai', flip: 'ai', future: 'ai', flip2: 'ai', future2: 'ai',
     math: 'science', chemistry: 'science', hangtian: 'science', shadow: 'science',
@@ -386,6 +386,7 @@
         '<div class="credit-row">' + creditsHtml(p.credit) + '</div>' +
         '<div class="feature-actions">' +
           '<button class="btn primary" type="button" data-play="pdoom">' + icon('play') + '立即播放</button>' +
+          '<button class="btn" type="button" data-act="render-item" data-key="pdoom" title="不进 MV，直接渲成 MP4">⤓ 渲染输出</button>' +
           '<button class="btn" type="button" data-cred="https://github.com/mexicat/pdoom-video">' + icon('ext') + '开源地址</button>' +
         '</div>' +
       '</div>';
@@ -473,7 +474,10 @@
         '<p class="desc">' + esc(e.desc) + '</p>' +
         '<div class="tags">' + (e.tags || []).map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>' +
         '<div class="mv-foot">' + (credits || '<span></span>') +
-          (e.imported ? '<span class="row-actions"><button class="mini" type="button" data-act="remove-item" data-key="' + esc(key) + '">移出合集</button></span>' : '') +
+          '<span class="row-actions">' +
+            '<button class="mini" type="button" data-act="render-item" data-key="' + esc(key) + '" title="不进 MV，直接把整支渲成 MP4 存到下载">⤓ 渲染输出</button>' +
+            (e.imported ? '<button class="mini" type="button" data-act="remove-item" data-key="' + esc(key) + '">移出合集</button>' : '') +
+          '</span>' +
         '</div>' +
       '</div>' +
     '</div>';
@@ -579,7 +583,7 @@
     }
   }
 
-  /* ---------------- 下载（Cloudflare R2） ---------------- */
+  /* ---------------- 下载（国内 Gitee） ---------------- */
   var dlPoll = null, dlPkg = null, dlSpeed = 0, dlSample = null;
   function downloadModal(p) {
     var P = PKGS[p];
@@ -588,7 +592,8 @@
     dlSpeed = 0; dlSample = null;
     openModal(
       '<h3>下载「' + esc(P.title) + '」</h3>' +
-      '<p class="hint">默认只内置 P(doom)。这一包 ' + fmtSize(P.bytes) + '，从 Cloudflare R2 直接下载，装好后离线播放，不用再等。</p>' +
+      '<p class="hint">默认只内置 P(doom)。这一包 ' + fmtSize(P.bytes) + '，从 GitHub Releases 下载，装好后离线播放。</p>' +
+      '<p class="hint" style="color:#ffb27a">国内直连 GitHub 可能较慢或中断，想要快速稳定下载请先挂代理。</p>' +
       '<div class="dl-box"><div class="dl-line"><span id="dlPct">准备中…</span><span id="dlSize" class="mono">' + fmtSize(P.bytes) + '</span></div>' +
       '<div class="dl-track"><i id="dlBar" style="width:0%"></i></div>' +
       '<p class="dl-note" id="dlNote">下载完成后会自动解压到本机，只影响这一个合集包。</p></div>' +
@@ -598,10 +603,25 @@
     var b = document.querySelector('[data-act="dl-start"]');
     if (b) b.focus();
   }
+  var dlBg = false;
+  function downloadActions(p) {
+    var acts = document.querySelector('.modal-actions');
+    if (!acts) return;
+    acts.innerHTML = '<button class="btn" type="button" data-act="dl-bg">放到后台</button>' +
+      '<button class="btn primary" type="button" data-act="dl-cancel" data-pkg="' + esc(p) + '">取消下载</button>';
+  }
+  function cancelDownload(p) {
+    dlBg = false;
+    fetch('/__dl/cancel?id=' + encodeURIComponent(p), { method: 'POST' }).catch(function () {});
+    clearInterval(dlPoll); dlPoll = null;
+    closeModal();
+    toast('已取消下载「' + ((PKGS[p] && PKGS[p].title) || p) + '」');
+  }
   function startDownload(p) {
     dlSpeed = 0; dlSample = null;
     var P = PKGS[p];
     if (!P) return;
+    downloadActions(p);
     var q = '/__dl?pkg=' + encodeURIComponent(p) + '&u=' + encodeURIComponent(P.url) + '&sha=' + P.sha256 + '&size=' + P.bytes;
     fetch(q, { method: 'POST' })
       .then(function (r) { return r.json(); })
@@ -631,6 +651,12 @@
           else if (j.state === 'done') {
             clearInterval(dlPoll); setDl('下载完成，正在打开…', 100, fmtSize(j.total), '已写入本机，可以离线播放');
             INSTALLED[p] = true;
+            if (dlBg) {
+              dlBg = false;
+              toast('「' + PKGS[p].title + '」已下载完成');
+              if (currentColId) renderCollection(currentColId); else renderHome();
+              return;
+            }
             setTimeout(function () {
               closeModal();
               toast('「' + PKGS[p].title + '」已下载');
@@ -924,6 +950,57 @@
   });
   function play_(k) { play(k); }
 
+  /* ---------------- 首页直接渲染（不进 MV） ---------------- */
+  var HOME_TIERS = [
+    { v: '1080p30', t: '1080P 30' },
+    { v: '1080p60', t: '1080P 60 · 默认' }, { v: '4k30', t: '4K 30' }, { v: '4k60', t: '4K 60' }
+  ];
+  var homeRenderKey = null;
+  function renderModal(key) {
+    var e = entryByKey(key);
+    if (!e) { toast('找不到这支 MV'); return; }
+    var pkg = e.imported ? null : pkgOf(key);
+    if (pkg && !pkgReady(pkg)) { downloadModal(pkg); return; }
+    homeRenderKey = key;
+    openModal(
+      '<h3>渲染输出 · ' + esc(e.title) + '</h3>' +
+      '<p class="hint">不用点进去看，直接把这支 MV 逐帧渲染成 MP4，存进系统「下载」目录。</p>' +
+      '<p style="background:rgba(255,140,40,.09);border:1px solid rgba(255,140,40,.3);border-radius:10px;padding:9px 11px;color:#ffcfa8;font-size:12px;line-height:1.6">' +
+      '⚠ 耗时约等于视频时长（保守档约再慢一倍），过程中持续满载、会明显发热耗电。建议电量 30% 以上或插电，注意散热。</p>' +
+      '<div class="field"><label for="hrQ">分辨率</label><select id="hrQ">' +
+      HOME_TIERS.map(function (t) { return '<option value="' + t.v + '"' + (t.v === '1080p60' ? ' selected' : '') + '>' + t.t + '</option>'; }).join('') +
+      '</select></div>' +
+      '<div class="field"><label for="hrM">效率</label><select id="hrM">' +
+      '<option value="aggressive">激进 · 满负荷（最快）</option>' +
+      '<option value="conservative">保守 · 约 50%（慢一倍、更凉）</option>' +
+      '</select></div>' +
+      '<p class="hint">两档输出完全一致（同分辨率、同帧率、同码率），只有快慢和发热不同。</p>' +
+      '<div class="modal-actions"><button class="btn" type="button" data-act="close-modal">取消</button>' +
+      '<button class="btn primary" type="button" data-act="render-start">开始渲染</button></div>'
+    );
+  }
+  function startHomeRender() {
+    var key = homeRenderKey;
+    if (!key) return;
+    var e = entryByKey(key);
+    if (!e) { closeModal(); return; }
+    var tierEl = document.getElementById('hrQ'), modeEl = document.getElementById('hrM');
+    var tier = (tierEl && tierEl.value) || '1080p60';
+    var mode = (modeEl && modeEl.value) || 'aggressive';
+    var pkg = e.imported ? null : pkgOf(key);
+    var href = e.imported ? e.href : (pkg ? ('/custom/' + pkg + '/' + MV_PATH[key]) : e.href);
+    // 首页直接渲染：让 MV 自己开播（P(doom) 靠 ?play=1 才会点开始）
+    href += (href.indexOf('?') >= 0 ? '&' : '?') + 'play=1';
+    var path = href;
+    try { path = new URL(href, location.origin).pathname; } catch (err) {}
+    var name = 'MV-' + String(key).replace(/[^A-Za-z0-9_-]/g, '-') + '-' + tier;
+    try {
+      localStorage.setItem('mvx-home-job', JSON.stringify({ path: path, href: href, tier: tier, mode: mode, name: name + '.mp4', ts: Date.now() }));
+    } catch (err) {}
+    closeModal();
+    location.href = href;
+  }
+
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     var el = e.target && e.target.closest && e.target.closest('[data-play],[data-col]');
@@ -937,6 +1014,8 @@
     var a = act.getAttribute('data-act');
     var id = act.getAttribute('data-id') || '';
     if (a === 'close-modal') { closeModal(); return; }
+    if (a === 'render-item') { renderModal(act.getAttribute('data-key')); return; }
+    if (a === 'render-start') { startHomeRender(); return; }
     if (a === 'new-col') { closeModal(); newCollectionModal(); return; }
     if (a === 'create-col') { createCollectionFromModal(); return; }
     if (a === 'rename-col') { renameCollectionModal(currentColId); return; }
@@ -992,6 +1071,8 @@
     if (a === 'del-import-confirm') { doDeleteImport(id); return; }
     if (a === 'dl-pkg') { downloadModal(act.getAttribute('data-pkg')); return; }
     if (a === 'dl-start') { startDownload(act.getAttribute('data-pkg')); return; }
+    if (a === 'dl-cancel') { cancelDownload(act.getAttribute('data-pkg')); return; }
+    if (a === 'dl-bg') { dlBg = true; closeModal(); toast('下载在后台继续，完成后会提示'); return; }
     if (a === 'del-pkg') { deletePkg(act.getAttribute('data-pkg')); return; }
     if (a === 'del-pkg-confirm') {
       var dp = act.getAttribute('data-pkg');

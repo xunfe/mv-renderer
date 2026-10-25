@@ -1,4 +1,4 @@
-import{n as e}from"./palette-BceqUlax.js";function t(){if(typeof location>`u`)return 1;let e=Math.round(Number(new URLSearchParams(location.search).get(`scale`)??`1`));return Number.isFinite(e)&&e>=1?Math.min(e,4):1}var n=t(),r=e=>`vec3(${e.map(e=>e.toFixed(5)).join(`,`)})`,i=`
+import{n as e}from"./palette-BceqUlax.js";function t(){if(typeof location>`u`)return 1;let e=Number(new URLSearchParams(location.search).get(`scale`)??`1`);return Number.isFinite(e)&&e>=0.35?Math.min(e,4):1}var n=t(),r=e=>`vec3(${e.map(e=>e.toFixed(5)).join(`,`)})`,i=`
 #define PI 3.14159265359
 #define TAU 6.28318530718
 // Output scale: physical px per logical (1920x1080) px. gl_FragCoord, fwidth and dFdx are in
